@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dashboard UI Builder"
+  short_description: "Build beautiful, optimized dashboards with data visualization, responsive layouts, and performance patterns"
+  default_prompt: "Create a dashboard with stat cards, charts, and data tables"
