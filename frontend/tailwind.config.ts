@@ -50,6 +50,10 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        'chat-user': {
+          DEFAULT: 'hsl(var(--chat-user))',
+          foreground: 'hsl(var(--chat-user-foreground))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
