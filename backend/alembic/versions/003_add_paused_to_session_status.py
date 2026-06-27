@@ -11,7 +11,7 @@ from typing import Sequence
 from alembic import op
 
 revision: str = "003"
-down_revision: str | None = "002_update_users_role_constraint"
+down_revision: str | None = "002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

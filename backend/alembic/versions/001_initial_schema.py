@@ -19,8 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto"')
-
-    # --- users ---
+# --- users ---
     op.create_table(
         "users",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
@@ -250,83 +249,6 @@ def upgrade() -> None:
     )
     op.create_index("idx_risk_items_category", "risk_items", ["category"], postgresql_where="deleted_at IS NULL")
 
-    # --- tasks ---
-    op.create_table(
-        "tasks",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("document_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("session_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("assigned_to", UUID(as_uuid=True), nullable=True),
-        sa.Column("title", sa.String(500), nullable=False),
-        sa.Column("description", sa.Text, nullable=True),
-        sa.Column("priority", sa.String(20), nullable=False, server_default="medium"),
-        sa.Column("status", sa.String(50), nullable=False, server_default="pending"),
-        sa.Column("due_date", sa.Date, nullable=True),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("task_metadata", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(["document_id"], ["documents.id"], name="fk_tasks_document_id", ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["assigned_to"], ["users.id"], name="fk_tasks_assigned_to", ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["session_id"], ["agent_sessions.id"], name="fk_tasks_session_id", ondelete="SET NULL"),
-    )
-    op.create_check_constraint(
-        "ck_tasks_priority_valid", "tasks",
-        "priority IN ('critical', 'high', 'medium', 'low')"
-    )
-    op.create_check_constraint(
-        "ck_tasks_status_valid", "tasks",
-        "status IN ('pending', 'in_progress', 'completed', 'cancelled', 'blocked')"
-    )
-    op.create_index(
-        "idx_tasks_assigned_to", "tasks", ["assigned_to"],
-        postgresql_where="deleted_at IS NULL AND status NOT IN ('completed', 'cancelled')"
-    )
-    op.create_index("idx_tasks_document_id", "tasks", ["document_id"], postgresql_where="deleted_at IS NULL")
-    op.create_index("idx_tasks_status", "tasks", ["status"], postgresql_where="deleted_at IS NULL")
-    op.create_index("idx_tasks_priority_status", "tasks", ["priority", "status"], postgresql_where="deleted_at IS NULL")
-    op.create_index(
-        "idx_tasks_due_date", "tasks", ["due_date"],
-        postgresql_where="deleted_at IS NULL AND status NOT IN ('completed', 'cancelled')"
-    )
-
-    # --- reports ---
-    op.create_table(
-        "reports",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("document_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("session_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("report_type", sa.String(100), nullable=False),
-        sa.Column("title", sa.String(500), nullable=False),
-        sa.Column("content", JSONB, nullable=False),
-        sa.Column("format", sa.String(20), nullable=False, server_default="json"),
-        sa.Column("storage_path", sa.String(1000), nullable=True),
-        sa.Column("status", sa.String(50), nullable=False, server_default="generated"),
-        sa.Column("generated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_reports_user_id", ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["document_id"], ["documents.id"], name="fk_reports_document_id", ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["session_id"], ["agent_sessions.id"], name="fk_reports_session_id", ondelete="SET NULL"),
-    )
-    op.create_check_constraint(
-        "ck_reports_format_valid", "reports",
-        "format IN ('json', 'pdf', 'html', 'csv', 'markdown')"
-    )
-    op.create_check_constraint(
-        "ck_reports_status_valid", "reports",
-        "status IN ('generating', 'generated', 'failed', 'expired')"
-    )
-    op.create_index("idx_reports_user_id", "reports", ["user_id"], postgresql_where="deleted_at IS NULL")
-    op.create_index("idx_reports_document_id", "reports", ["document_id"], postgresql_where="deleted_at IS NULL")
-    op.create_index("idx_reports_session_id", "reports", ["session_id"], postgresql_where="deleted_at IS NULL")
-    op.create_index("idx_reports_type", "reports", ["report_type"], postgresql_where="deleted_at IS NULL")
-    op.create_index("idx_reports_generated_at", "reports", [sa.text("generated_at DESC")])
-
     # --- agent_sessions ---
     op.create_table(
         "agent_sessions",
@@ -425,6 +347,83 @@ def upgrade() -> None:
     op.create_index("idx_tool_calls_tool_name", "tool_calls", ["tool_name"])
     op.create_index("idx_tool_calls_session_tool", "tool_calls", ["session_id", "tool_name"])
 
+    # --- tasks ---
+    op.create_table(
+        "tasks",
+        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("document_id", UUID(as_uuid=True), nullable=True),
+        sa.Column("session_id", UUID(as_uuid=True), nullable=True),
+        sa.Column("assigned_to", UUID(as_uuid=True), nullable=True),
+        sa.Column("title", sa.String(500), nullable=False),
+        sa.Column("description", sa.Text, nullable=True),
+        sa.Column("priority", sa.String(20), nullable=False, server_default="medium"),
+        sa.Column("status", sa.String(50), nullable=False, server_default="pending"),
+        sa.Column("due_date", sa.Date, nullable=True),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("task_metadata", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(["document_id"], ["documents.id"], name="fk_tasks_document_id", ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["assigned_to"], ["users.id"], name="fk_tasks_assigned_to", ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["session_id"], ["agent_sessions.id"], name="fk_tasks_session_id", ondelete="SET NULL"),
+    )
+    op.create_check_constraint(
+        "ck_tasks_priority_valid", "tasks",
+        "priority IN ('critical', 'high', 'medium', 'low')"
+    )
+    op.create_check_constraint(
+        "ck_tasks_status_valid", "tasks",
+        "status IN ('pending', 'in_progress', 'completed', 'cancelled', 'blocked')"
+    )
+    op.create_index(
+        "idx_tasks_assigned_to", "tasks", ["assigned_to"],
+        postgresql_where="deleted_at IS NULL AND status NOT IN ('completed', 'cancelled')"
+    )
+    op.create_index("idx_tasks_document_id", "tasks", ["document_id"], postgresql_where="deleted_at IS NULL")
+    op.create_index("idx_tasks_status", "tasks", ["status"], postgresql_where="deleted_at IS NULL")
+    op.create_index("idx_tasks_priority_status", "tasks", ["priority", "status"], postgresql_where="deleted_at IS NULL")
+    op.create_index(
+        "idx_tasks_due_date", "tasks", ["due_date"],
+        postgresql_where="deleted_at IS NULL AND status NOT IN ('completed', 'cancelled')"
+    )
+
+    # --- reports ---
+    op.create_table(
+        "reports",
+        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("user_id", UUID(as_uuid=True), nullable=False),
+        sa.Column("document_id", UUID(as_uuid=True), nullable=True),
+        sa.Column("session_id", UUID(as_uuid=True), nullable=True),
+        sa.Column("report_type", sa.String(100), nullable=False),
+        sa.Column("title", sa.String(500), nullable=False),
+        sa.Column("content", JSONB, nullable=False),
+        sa.Column("format", sa.String(20), nullable=False, server_default="json"),
+        sa.Column("storage_path", sa.String(1000), nullable=True),
+        sa.Column("status", sa.String(50), nullable=False, server_default="generated"),
+        sa.Column("generated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_reports_user_id", ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["document_id"], ["documents.id"], name="fk_reports_document_id", ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["session_id"], ["agent_sessions.id"], name="fk_reports_session_id", ondelete="SET NULL"),
+    )
+    op.create_check_constraint(
+        "ck_reports_format_valid", "reports",
+        "format IN ('json', 'pdf', 'html', 'csv', 'markdown')"
+    )
+    op.create_check_constraint(
+        "ck_reports_status_valid", "reports",
+        "status IN ('generating', 'generated', 'failed', 'expired')"
+    )
+    op.create_index("idx_reports_user_id", "reports", ["user_id"], postgresql_where="deleted_at IS NULL")
+    op.create_index("idx_reports_document_id", "reports", ["document_id"], postgresql_where="deleted_at IS NULL")
+    op.create_index("idx_reports_session_id", "reports", ["session_id"], postgresql_where="deleted_at IS NULL")
+    op.create_index("idx_reports_type", "reports", ["report_type"], postgresql_where="deleted_at IS NULL")
+    op.create_index("idx_reports_generated_at", "reports", [sa.text("generated_at DESC")])
+
     # --- eval_datasets ---
     op.create_table(
         "eval_datasets",
@@ -513,15 +512,16 @@ def upgrade() -> None:
     op.create_index("idx_audit_logs_request_id", "audit_logs", ["request_id"], postgresql_where="request_id IS NOT NULL")
 
 
+
 def downgrade() -> None:
     op.drop_table("audit_logs")
     op.drop_table("eval_runs")
     op.drop_table("eval_datasets")
     op.drop_table("tool_calls")
     op.drop_table("agent_steps")
-    op.drop_table("agent_sessions")
-    op.drop_table("reports")
     op.drop_table("tasks")
+    op.drop_table("reports")
+    op.drop_table("agent_sessions")
     op.drop_table("risk_items")
     op.drop_table("extracted_fields")
     op.drop_table("extraction_schemas")
