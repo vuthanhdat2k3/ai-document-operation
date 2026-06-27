@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_user_id
 from app.db.models.chat import ChatSession
 from app.db.models.document import Document
 from app.db.models.document_page import DocumentPage
@@ -16,19 +17,20 @@ from app.db.session import get_db
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
-CURRENT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
 
 @router.get("/stats")
 async def get_dashboard_stats(
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict:
-    """Get dashboard statistics."""
+    """Get dashboard statistics for the current user."""
 
     # Total documents (not deleted)
     doc_count = (
         await db.execute(
-            select(func.count()).select_from(Document).where(Document.deleted_at.is_(None))
+            select(func.count())
+            .select_from(Document)
+            .where(Document.deleted_at.is_(None), Document.user_id == user_id)
         )
     ).scalar() or 0
 
@@ -36,28 +38,46 @@ async def get_dashboard_stats(
     status_rows = (
         await db.execute(
             select(Document.status, func.count())
-            .where(Document.deleted_at.is_(None))
+            .where(Document.deleted_at.is_(None), Document.user_id == user_id)
             .group_by(Document.status)
         )
     ).all()
     docs_by_status = {row[0]: row[1] for row in status_rows}
 
-    # Total pages parsed
-    page_count = (await db.execute(select(func.count()).select_from(DocumentPage))).scalar() or 0
+    # Total pages parsed (scoped to user's documents)
+    page_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(DocumentPage)
+            .join(Document, Document.id == DocumentPage.document_id)
+            .where(Document.user_id == user_id)
+        )
+    ).scalar() or 0
 
     # Total chat sessions
     session_count = (
-        await db.execute(select(func.count()).select_from(ChatSession))
+        await db.execute(
+            select(func.count())
+            .select_from(ChatSession)
+            .where(ChatSession.user_id == user_id)
+        )
     ).scalar() or 0
 
-    # Total risk items
-    risk_count = (await db.execute(select(func.count()).select_from(RiskItem))).scalar() or 0
+    # Total risk items (scoped to user's documents)
+    risk_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(RiskItem)
+            .join(Document, Document.id == RiskItem.document_id)
+            .where(Document.user_id == user_id)
+        )
+    ).scalar() or 0
 
     # Recent documents
     recent_docs_result = (
         await db.execute(
             select(Document)
-            .where(Document.deleted_at.is_(None))
+            .where(Document.deleted_at.is_(None), Document.user_id == user_id)
             .order_by(Document.created_at.desc())
             .limit(5)
         )

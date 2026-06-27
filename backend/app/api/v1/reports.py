@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.middleware.error_handler import NotFoundError, ValidationErrorDetail
+from app.api.middleware.error_handler import NotFoundError, ForbiddenError, ValidationErrorDetail
 from app.api.schemas.reports import (
     ExportFormat,
     ReportCreateRequest,
@@ -14,6 +14,7 @@ from app.api.schemas.reports import (
     ReportResponse,
     ReportType,
 )
+from app.auth.dependencies import get_current_user_id
 from app.db.session import get_db
 from app.services.report_generator import (
     DocumentNotFoundError as ReportDocNotFoundError,
@@ -28,17 +29,10 @@ from app.services.report_service import (
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-CURRENT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
 
 async def _get_report_service() -> ReportService:
     """Dependency that provides a ReportService instance."""
     return ReportService()
-
-
-async def _get_current_user_id() -> uuid.UUID:
-    """Placeholder dependency for the current authenticated user."""
-    return CURRENT_USER_ID
 
 
 @router.post(
@@ -50,7 +44,7 @@ async def generate_report(
     document_id: uuid.UUID,
     body: ReportCreateRequest | None = None,
     service: ReportService = Depends(_get_report_service),  # noqa: B008
-    user_id: uuid.UUID = Depends(_get_current_user_id),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> ReportResponse:
     """Generate a report for a document.
@@ -84,13 +78,19 @@ async def generate_report(
 
 @router.get("/")
 async def list_reports(
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict:
-    """List all reports."""
+    """List all reports for the current user."""
     from sqlalchemy import select
     from app.db.models.report import Report
 
-    result = await db.execute(select(Report).order_by(Report.created_at.desc()).limit(50))
+    result = await db.execute(
+        select(Report)
+        .where(Report.user_id == user_id)
+        .order_by(Report.created_at.desc())
+        .limit(50)
+    )
     reports = result.scalars().all()
     return {
         "items": [
@@ -111,14 +111,20 @@ async def list_reports(
 @router.get("/{report_id}", response_model=ReportResponse)
 async def get_report(
     report_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     service: ReportService = Depends(_get_report_service),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> ReportResponse:
-    """Retrieve report metadata by ID."""
-    try:
-        report = await service.get_report(str(report_id), db)
-    except ReportNotFoundError as exc:
-        raise NotFoundError(str(exc)) from exc
+    """Retrieve report metadata by ID (must own the report)."""
+    from app.db.models.report import Report
+    from sqlalchemy import select
+
+    result = await db.execute(
+        select(Report).where(Report.id == report_id, Report.user_id == user_id)
+    )
+    report = result.scalar_one_or_none()
+    if report is None:
+        raise NotFoundError(f"Report {report_id} not found")
 
     return ReportResponse.model_validate(report)
 
@@ -126,16 +132,26 @@ async def get_report(
 @router.get("/{report_id}/download")
 async def download_report(
     report_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     format: str = Query(default="markdown", description="Export format: markdown or pdf"),  # noqa: A002
     service: ReportService = Depends(_get_report_service),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> Response:
-    """Download a report in the specified format.
+    """Download a report in the specified format (must own the report).
 
     Supported formats: ``markdown``, ``pdf``.
     Returns the file content directly with appropriate Content-Type and
     Content-Disposition headers.
     """
+    from app.db.models.report import Report
+    from sqlalchemy import select
+
+    result = await db.execute(
+        select(Report).where(Report.id == report_id, Report.user_id == user_id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise NotFoundError(f"Report {report_id} not found")
+
     if format not in set(ExportFormat):
         raise ValidationErrorDetail(
             f"Invalid export format {format!r}. Choose from: markdown, pdf"

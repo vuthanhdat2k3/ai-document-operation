@@ -16,6 +16,7 @@ from app.api.schemas.qa import (
     QARequest,
     QAResponse,
 )
+from app.auth.dependencies import get_current_user_id
 from app.db.session import get_db
 from app.deps import get_qdrant, get_redis
 from app.rag.embedder import EmbeddingPipeline
@@ -27,8 +28,6 @@ from app.services.qa_service import QAService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/qa", tags=["qa"])
-
-CURRENT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 CACHE_TTL = 300  # 5 minutes
 
@@ -70,6 +69,7 @@ def _cache_key(query: str, document_id: str | None) -> str:
 @router.post("/ask", response_model=QAResponse)
 async def ask_question(
     body: QARequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     qa_service: QAService = Depends(_get_qa_service),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
     redis_client: aioredis.Redis = Depends(get_redis),  # noqa: B008
@@ -83,14 +83,14 @@ async def ask_question(
     if session_id:
         try:
             session_uuid = uuid.UUID(session_id)
-            session = await chat_service.get_session(session_uuid, CURRENT_USER_ID, db)
+            session = await chat_service.get_session(session_uuid, user_id, db)
         except (ValueError, Exception):
             session = await chat_service.create_session(
-                user_id=CURRENT_USER_ID, db=db, document_id=uuid.UUID(document_id) if document_id else None,
+                user_id=user_id, db=db, document_id=uuid.UUID(document_id) if document_id else None,
             )
     else:
         session = await chat_service.create_session(
-            user_id=CURRENT_USER_ID, db=db, document_id=uuid.UUID(document_id) if document_id else None,
+            user_id=user_id, db=db, document_id=uuid.UUID(document_id) if document_id else None,
         )
     session_uuid = session.id
 

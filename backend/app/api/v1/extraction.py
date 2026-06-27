@@ -15,6 +15,7 @@ from app.api.schemas.extraction import (
     FieldUpdateResponse,
     ValidationResultResponse,
 )
+from app.auth.dependencies import get_current_user_id
 from app.db.session import get_db
 from app.services.extraction_service import (
     DocumentNotFoundError,
@@ -27,18 +28,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["extraction"])
 
-CURRENT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
 
 async def _get_extraction_service() -> ExtractionService:
     """Dependency that provides an ExtractionService instance."""
     return ExtractionService()
-
-
-async def _get_current_user_id() -> uuid.UUID:
-    """Placeholder dependency for the current authenticated user."""
-    return CURRENT_USER_ID
-
 
 @router.post("/{document_id}/extract", response_model=ExtractionResultResponse)
 async def extract_fields(
@@ -166,7 +159,7 @@ async def update_extracted_field(
     field_id: uuid.UUID,
     body: FieldUpdateRequest,
     service: ExtractionService = Depends(_get_extraction_service),  # noqa: B008
-    user_id: uuid.UUID = Depends(_get_current_user_id),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> FieldUpdateResponse:
     """Manually correct an extracted field value.
