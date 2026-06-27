@@ -1,4 +1,9 @@
-"""Agent service — orchestrates agent graph execution with DB persistence."""
+"""Agent service — orchestrates agent graph execution with DB persistence.
+
+Supports both legacy ``run(task_type, ...)`` for backward compatibility
+and the new harness-based ``run_agent(agent_name, ...)`` that uses
+AgentSpec + AgentRegistry.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ class AgentResult:
         session_id: UUID of the persisted agent session.
         status: Final status (completed, failed, timeout, cancelled).
         duration_ms: Total wall-clock duration in milliseconds.
+        agent_name: Name of the agent that was executed.
     """
 
     answer: str
@@ -39,6 +45,7 @@ class AgentResult:
     session_id: str
     status: str = "completed"
     duration_ms: int = 0
+    agent_name: str = ""
 
 
 class AgentServiceError(Exception):
@@ -49,29 +56,119 @@ class AgentService:
     """Execute agent tasks with safety controls and session persistence.
 
     This service:
-    1. Creates an ``AgentSession`` record in the database.
+    1. Resolves the AgentSpec from AgentRegistry (new flow) or uses defaults (legacy).
     2. Constructs the initial ``AgentState``.
-    3. Runs the agent graph (LangGraph or fallback).
+    3. Builds and runs the agent graph (LangGraph or fallback).
     4. Persists each step as an ``AgentStep`` record.
     5. Updates the session with final results.
     6. Returns an ``AgentResult``.
 
     Args:
-        max_iterations: Hard iteration limit.
+        max_iterations: Hard iteration limit (overrides AgentSpec guardrails).
         max_cost_usd: Cost abort threshold.
         max_wall_clock_seconds: Time abort threshold.
     """
 
     def __init__(
         self,
-        max_iterations: int = 10,
-        max_cost_usd: float = 5.0,
-        max_wall_clock_seconds: int = 300,
+        max_iterations: int | None = None,
+        max_cost_usd: float | None = None,
+        max_wall_clock_seconds: int | None = None,
     ) -> None:
-        self.max_iterations = max_iterations
-        self.iteration_guard = MaxIterationGuard(max_iterations)
-        self.cost_tracker = CostTracker(max_cost_usd=max_cost_usd)
-        self.wall_clock_guard = WallClockGuard(max_seconds=max_wall_clock_seconds)
+        self._max_iterations = max_iterations
+        self._max_cost_usd = max_cost_usd
+        self._max_wall_clock_seconds = max_wall_clock_seconds
+
+        self.iteration_guard = MaxIterationGuard(max_iterations or 10)
+        self.cost_tracker = CostTracker(max_cost_usd=max_cost_usd or 5.0)
+        self.wall_clock_guard = WallClockGuard(max_seconds=max_wall_clock_seconds or 300)
+
+    async def run_chain(
+        self,
+        agent_names: list[str],
+        query: str,
+        user_id: uuid.UUID | None = None,
+        document_id: uuid.UUID | None = None,
+    ) -> AgentResult:
+        """Execute a sequence of agents in a chain (pipeline).
+
+        Each agent receives the previous agent's answer as context.
+        The final agent's answer is returned.
+
+        Args:
+            agent_names: Ordered list of agent names to execute.
+            query: Initial input query for the first agent.
+            user_id: Optional user ID for session ownership.
+            document_id: Optional document ID for context.
+
+        Returns:
+            ``AgentResult`` with the aggregated answer and steps.
+        """
+        from app.harness.multi_agent import AgentChain
+
+        chain = AgentChain(
+            agent_names=agent_names,
+            description=f"AgentService chain: {' → '.join(agent_names)}",
+        )
+        result = await chain.run(query=query)
+
+        return AgentResult(
+            answer=result.final_answer,
+            steps=[
+                {"agent_name": s.agent_name, "query": s.query, "answer": s.answer}
+                for s in result.steps
+            ],
+            cost={},
+            iterations=result.total_iterations,
+            session_id=result.steps[-1].session_id if result.steps else "",
+            status="completed",
+            agent_name="chain",
+        )
+
+    async def run_agent(
+        self,
+        agent_name: str,
+        input_data: dict[str, Any],
+        db: AsyncSession,
+        user_id: uuid.UUID | None = None,
+        document_id: uuid.UUID | None = None,
+    ) -> AgentResult:
+        """Execute an agent by name using its AgentSpec definition.
+
+        Looks up the agent in the AgentRegistry, resolves its tools
+        and guardrails, then builds and executes the appropriate graph.
+
+        Args:
+            agent_name: Name of the registered agent (e.g. 'doc-qa', 'chat').
+            input_data: Task input containing at minimum a 'query' or 'messages' key.
+            db: Active async database session for persistence.
+            user_id: Optional user ID for session ownership.
+            document_id: Optional document ID for context.
+
+        Returns:
+            ``AgentResult`` with the answer, steps, cost, and session ID.
+        """
+        from app.harness.agent_registry import get_agent_registry
+
+        registry = get_agent_registry()
+        spec = registry.get(agent_name)
+
+        guardrails = spec.guardrails
+        max_iter = self._max_iterations or guardrails.max_iterations
+        max_cost = self._max_cost_usd or guardrails.max_cost_usd
+        max_wall_clock = self._max_wall_clock_seconds or guardrails.max_wall_clock_seconds
+
+        return await self._execute(
+            agent_name=agent_name,
+            spec=spec,
+            input_data=input_data,
+            db=db,
+            user_id=user_id,
+            document_id=document_id,
+            max_iterations=max_iter,
+            max_cost_usd=max_cost,
+            max_wall_clock_seconds=max_wall_clock,
+        )
 
     async def run(
         self,
@@ -81,7 +178,10 @@ class AgentService:
         user_id: uuid.UUID | None = None,
         document_id: uuid.UUID | None = None,
     ) -> AgentResult:
-        """Execute an agent task end-to-end.
+        """Execute an agent task end-to-end (legacy interface).
+
+        .. deprecated::
+            Use ``run_agent(agent_name, ...)`` instead.
 
         Args:
             task_type: Type of agent task (e.g. 'qa', 'summarize', 'extract').
@@ -93,8 +193,184 @@ class AgentService:
         Returns:
             ``AgentResult`` with the answer, steps, cost, and session ID.
         """
+        agent_name = _legacy_task_type_to_agent(task_type)
+
+        from app.harness.agent_registry import get_agent_registry
+
+        registry = get_agent_registry()
+        if registry.has(agent_name):
+            return await self.run_agent(
+                agent_name=agent_name,
+                input_data=input_data,
+                db=db,
+                user_id=user_id,
+                document_id=document_id,
+            )
+
+        return await self._execute_legacy(
+            task_type=task_type,
+            input_data=input_data,
+            db=db,
+            user_id=user_id,
+            document_id=document_id,
+        )
+
+    async def _execute(
+        self,
+        agent_name: str,
+        spec: Any,
+        input_data: dict[str, Any],
+        db: AsyncSession,
+        user_id: uuid.UUID | None,
+        document_id: uuid.UUID | None,
+        max_iterations: int,
+        max_cost_usd: float,
+        max_wall_clock_seconds: int,
+    ) -> AgentResult:
+        """Execute an agent using its AgentSpec.
+
+        Constructs the initial state, builds the graph via the harness,
+        runs it, and persists results.
+        """
         start = time.monotonic()
         session_id = uuid.uuid4()
+
+        self.iteration_guard = MaxIterationGuard(max_iterations)
+        self.cost_tracker = CostTracker(max_cost_usd=max_cost_usd)
+        self.wall_clock_guard = WallClockGuard(max_seconds=max_wall_clock_seconds)
+        self.wall_clock_guard.start()
+
+        messages = input_data.get("messages", [])
+        if not messages and input_data.get("query"):
+            messages = [{"role": "user", "content": input_data["query"]}]
+
+        context = dict(input_data.get("context", {}))
+        if document_id:
+            context["document_id"] = str(document_id)
+
+        initial_state = AgentState(
+            messages=messages,
+            context=context,
+            documents=context.get("documents", []),
+            current_step="init",
+            iteration=0,
+            max_iterations=max_iterations,
+            tool_results=[],
+            final_answer=None,
+            metadata={
+                "session_id": str(session_id),
+                "agent_name": agent_name,
+                "task_type": agent_name,
+                "model": spec.model.model_name,
+            },
+            task_type=agent_name,
+            pending_tool=None,
+            error=None,
+            steps=[],
+        )
+
+        await self._create_session(
+            db=db,
+            session_id=session_id,
+            user_id=user_id,
+            document_id=document_id,
+            agent_type=agent_name,
+            input_data=input_data,
+        )
+
+        try:
+            from app.harness.agent_graph import build_agent_graph
+
+            graph = build_agent_graph(spec)
+
+            if hasattr(graph, "ainvoke"):
+                final_state = await graph.ainvoke(initial_state)
+            elif hasattr(graph, "invoke"):
+                final_state = graph.invoke(initial_state)
+            else:
+                raise AgentServiceError("Agent graph has no invoke/ainvoke method")
+
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+
+            await self._persist_steps(db=db, session_id=session_id, steps=final_state.get("steps", []))
+
+            cost_summary = final_state.get("metadata", {}).get("cost", {})
+            answer = final_state.get("final_answer", "")
+            iterations = final_state.get("iteration", 0)
+
+            await self._update_session(
+                db=db,
+                session_id=session_id,
+                status="completed",
+                output_data={
+                    "answer": answer,
+                    "iterations": iterations,
+                    "cost": cost_summary,
+                },
+                total_tokens=cost_summary.get("total_tokens"),
+                completed_at=datetime.now(UTC),
+            )
+
+            await db.commit()
+
+            return AgentResult(
+                answer=answer,
+                steps=[s for s in final_state.get("steps", [])],
+                cost=cost_summary,
+                iterations=iterations,
+                session_id=str(session_id),
+                status="completed",
+                duration_ms=elapsed_ms,
+                agent_name=agent_name,
+            )
+
+        except Exception as e:
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            logger.error("Agent '%s' execution failed: %s", agent_name, e, exc_info=True)
+
+            try:
+                await self._update_session(
+                    db=db,
+                    session_id=session_id,
+                    status="failed",
+                    error_message=str(e),
+                    completed_at=datetime.now(UTC),
+                )
+                await db.commit()
+            except Exception:
+                logger.error("Failed to update session on error", exc_info=True)
+                await db.rollback()
+
+            return AgentResult(
+                answer=f"Agent execution failed: {e}",
+                steps=[],
+                cost=self.cost_tracker.summary(),
+                iterations=0,
+                session_id=str(session_id),
+                status="failed",
+                duration_ms=elapsed_ms,
+                agent_name=agent_name,
+            )
+
+    async def _execute_legacy(
+        self,
+        task_type: str,
+        input_data: dict[str, Any],
+        db: AsyncSession,
+        user_id: uuid.UUID | None,
+        document_id: uuid.UUID | None,
+    ) -> AgentResult:
+        """Original execution path (backward compatibility).
+
+        Uses the hardcoded ``app.agents.graph.create_agent_graph()``
+        which builds the fixed retrieve→reason→tool_call→synthesize graph.
+        """
+        start = time.monotonic()
+        session_id = uuid.uuid4()
+
+        self.iteration_guard = MaxIterationGuard(self._max_iterations or 10)
+        self.cost_tracker = CostTracker(max_cost_usd=self._max_cost_usd or 5.0)
+        self.wall_clock_guard = WallClockGuard(max_seconds=self._max_wall_clock_seconds or 300)
         self.wall_clock_guard.start()
 
         messages = input_data.get("messages", [])
@@ -103,10 +379,11 @@ class AgentService:
 
         initial_state = AgentState(
             messages=messages,
+            context={},
             documents=[],
             current_step="init",
             iteration=0,
-            max_iterations=self.max_iterations,
+            max_iterations=self._max_iterations or 10,
             tool_results=[],
             final_answer=None,
             metadata={"session_id": str(session_id), "task_type": task_type},
@@ -168,11 +445,12 @@ class AgentService:
                 session_id=str(session_id),
                 status="completed",
                 duration_ms=elapsed_ms,
+                agent_name=task_type,
             )
 
         except Exception as e:
             elapsed_ms = int((time.monotonic() - start) * 1000)
-            logger.error("Agent execution failed: %s", e, exc_info=True)
+            logger.error("Legacy agent execution failed: %s", e, exc_info=True)
 
             try:
                 await self._update_session(
@@ -195,6 +473,7 @@ class AgentService:
                 session_id=str(session_id),
                 status="failed",
                 duration_ms=elapsed_ms,
+                agent_name=task_type,
             )
 
     async def get_session(
@@ -343,3 +622,15 @@ class AgentService:
             db.add(step_record)
 
         await db.flush()
+
+
+def _legacy_task_type_to_agent(task_type: str) -> str:
+    """Map legacy ``task_type`` values to agent names."""
+    mapping = {
+        "qa": "doc-qa",
+        "summarize": "summarise",
+        "extract": "doc-extract",
+        "risk": "doc-qa",
+        "chat": "chat",
+    }
+    return mapping.get(task_type, task_type)

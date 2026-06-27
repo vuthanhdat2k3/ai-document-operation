@@ -81,7 +81,8 @@ async def _flush_telemetry() -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application startup and shutdown lifecycle.
 
-    On startup: initializes database pool, vector store, and warms up models.
+    On startup: initializes database pool, vector store, loads built-in
+    agent templates, and warms up models.
     On teardown: closes connections and flushes telemetry.
 
     Args:
@@ -90,6 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Starting application...")
     await _init_db()
     await _seed_defaults()
+    _load_builtin_agents()
     try:
         await _init_vector_store()
     except Exception:
@@ -104,6 +106,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await _shutdown_vector_store()
     await _flush_telemetry()
     logger.info("Application shutdown complete")
+
+
+def _load_builtin_agents() -> None:
+    """Register built-in agent templates from app.agents.agents."""
+    try:
+        from app.agents.agents import load_builtin_agents
+
+        load_builtin_agents()
+        logger.info("Built-in agent templates loaded")
+    except Exception:
+        logger.exception("Failed to load built-in agent templates")
 
 
 def _parse_cors_origins(cors_origins_str: str) -> list[str]:

@@ -1,6 +1,7 @@
 """Async SQLAlchemy engine and session factory."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -61,6 +62,27 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     factory = get_session_factory()
     async with factory() as session:
         yield session
+
+
+@asynccontextmanager
+async def get_async_session() -> AsyncIterator[AsyncSession]:
+    """Standalone async context manager for database sessions.
+
+    Usage::
+
+        async with get_async_session() as db:
+            result = await db.execute(...)
+
+    This is a convenience wrapper around ``get_session_factory()``
+    for use outside of FastAPI dependency injection (e.g. in tools,
+    background workers, or scripts).
+    """
+    factory = get_session_factory()
+    async with factory() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
 
 
 async def close_engine() -> None:

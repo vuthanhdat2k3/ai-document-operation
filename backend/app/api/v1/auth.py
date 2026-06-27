@@ -51,7 +51,7 @@ async def register(
         email=body.email,
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
-        role="viewer",
+        role="user",
         is_active=True,
     )
     db.add(user)
