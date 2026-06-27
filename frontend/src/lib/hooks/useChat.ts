@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { ChatMessage, ChatSession, ChatSessionDetail, Citation, QAResponse } from '@/types';
+import type { ChatMessage, ChatSession, ChatSessionDetail, QAResponse } from '@/types';
 
 export function useChatSessions() {
   return useQuery({

@@ -4,63 +4,98 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* ---- Premium palette ---- */
+    --background: 220 20% 97%;
+    --foreground: 220 30% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 220 30% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --popover-foreground: 220 30% 10%;
+    --primary: 221 50% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 15% 93%;
+    --secondary-foreground: 220 25% 18%;
+    --muted: 220 12% 93%;
+    --muted-foreground: 220 12% 45%;
+    --accent: 220 15% 90%;
+    --accent-foreground: 220 25% 18%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 50% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 85% 52%;
+    --border: 220 15% 88%;
+    --input: 220 15% 88%;
+    --ring: 221 50% 48%;
+    --radius: 0.625rem;
 
-    /* Premium tokens */
-    --surface-glass: 0 0% 100% / 0.7;
-    --accent-glow: 221.2 83.2% 53.3% / 0.15;
-    --chat-user: 221.2 83.2% 53.3%;
-    --chat-user-foreground: 210 40% 98%;
-    --border-subtle: 214.3 31.8% 95%;
+    /* ---- Premium surface tokens ---- */
+    --surface-primary: 220 20% 99%;
+    --surface-secondary: 220 15% 95%;
+    --surface-elevated: 0 0% 100%;
+    --surface-glass: 0 0% 100% / 0.65;
+    --surface-glass-strong: 0 0% 100% / 0.82;
+    --accent-glow: 221 50% 48% / 0.12;
+    --chat-user: 221 50% 48%;
+    --chat-user-foreground: 0 0% 100%;
+    --border-subtle: 220 15% 92%;
+    --border-active: 221 50% 48%;
+    --sidebar-active: 221 50% 48%;
+
+    /* ---- Shadow system ---- */
+    --shadow-xs: 0 0 0 1px hsl(220 15% 88% / 0.5);
+    --shadow-sm: 0 1px 2px hsl(220 20% 10% / 0.04), 0 0 0 1px hsl(220 15% 88% / 0.5);
+    --shadow-md: 0 4px 12px hsl(220 20% 10% / 0.05), 0 0 0 1px hsl(220 15% 88% / 0.4);
+    --shadow-lg: 0 8px 30px hsl(220 20% 10% / 0.06), 0 0 0 1px hsl(220 15% 88% / 0.4);
+    --shadow-xl: 0 20px 60px hsl(220 20% 10% / 0.08), 0 0 0 1px hsl(220 15% 88% / 0.3);
+    --shadow-glow: 0 0 20px hsl(221 50% 48% / 0.15);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
-    --radius: 0.5rem;
+    --background: 220 25% 7%;
+    --foreground: 220 10% 92%;
+    --card: 220 25% 9%;
+    --card-foreground: 220 10% 92%;
+    --popover: 220 25% 9%;
+    --popover-foreground: 220 10% 92%;
+    --primary: 221 45% 52%;
+    --primary-foreground: 220 25% 7%;
+    --secondary: 220 20% 14%;
+    --secondary-foreground: 220 10% 92%;
+    --muted: 220 18% 14%;
+    --muted-foreground: 220 12% 58%;
+    --accent: 220 20% 16%;
+    --accent-foreground: 220 10% 92%;
+    --destructive: 0 62% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 45% 38%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 75% 46%;
+    --border: 220 20% 16%;
+    --input: 220 20% 16%;
+    --ring: 221 45% 52%;
+    --radius: 0.625rem;
 
-    /* Premium tokens */
-    --surface-glass: 0 0% 100% / 0.05;
-    --accent-glow: 217.2 91.2% 59.8% / 0.2;
-    --chat-user: 217.2 91.2% 59.8%;
-    --chat-user-foreground: 222.2 47.4% 11.2%;
-    --border-subtle: 217.2 32.6% 22%;
+    /* ---- Premium surface tokens ---- */
+    --surface-primary: 220 25% 8%;
+    --surface-secondary: 220 25% 11%;
+    --surface-elevated: 220 25% 12%;
+    --surface-glass: 0 0% 100% / 0.04;
+    --surface-glass-strong: 0 0% 100% / 0.08;
+    --accent-glow: 221 45% 52% / 0.18;
+    --chat-user: 221 45% 52%;
+    --chat-user-foreground: 220 25% 7%;
+    --border-subtle: 220 20% 19%;
+    --border-active: 221 45% 52%;
+    --sidebar-active: 221 45% 52%;
+
+    /* ---- Shadow system ---- */
+    --shadow-xs: 0 0 0 1px hsl(220 20% 16% / 0.8);
+    --shadow-sm: 0 1px 2px hsl(220 20% 5% / 0.3), 0 0 0 1px hsl(220 20% 16% / 0.8);
+    --shadow-md: 0 4px 12px hsl(220 20% 5% / 0.4), 0 0 0 1px hsl(220 20% 16% / 0.6);
+    --shadow-lg: 0 8px 30px hsl(220 20% 5% / 0.5), 0 0 0 1px hsl(220 20% 16% / 0.6);
+    --shadow-xl: 0 20px 60px hsl(220 20% 5% / 0.6), 0 0 0 1px hsl(220 20% 16% / 0.5);
+    --shadow-glow: 0 0 20px hsl(221 45% 52% / 0.2);
   }
 }
 
@@ -68,11 +103,30 @@
   * {
     @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
-  /* Premium scrollbar for chat */
+  /* ---- Premium scrollbar ---- */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.15);
+    border-radius: 99px;
+    transition: background 0.2s;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.3);
+  }
+
+  /* ---- Chat scrollbar ---- */
   .chat-scrollbar::-webkit-scrollbar {
     width: 4px;
   }
@@ -80,18 +134,31 @@
     background: transparent;
   }
   .chat-scrollbar::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted-foreground) / 0.2);
+    background: hsl(var(--muted-foreground) / 0.15);
     border-radius: 99px;
   }
   .chat-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.4);
+    background: hsl(var(--muted-foreground) / 0.3);
   }
 
-  /* Typing indicator animation */
+  /* ---- Thin scrollbar ---- */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.15);
+    border-radius: 99px;
+  }
+
+  /* ---- Typing indicator ---- */
   @keyframes typing-dot {
     0%, 60%, 100% {
       transform: translateY(0);
-      opacity: 0.4;
+      opacity: 0.3;
     }
     30% {
       transform: translateY(-6px);
@@ -108,7 +175,7 @@
     animation-delay: 0.32s;
   }
 
-  /* Message entry animation */
+  /* ---- Message entry animation ---- */
   @keyframes message-enter {
     from {
       opacity: 0;
@@ -120,22 +187,42 @@
     }
   }
   .message-enter {
-    animation: message-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: message-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
-  /* Glass effect utility */
+  /* ---- Glass utilities ---- */
   .glass {
     background: hsl(var(--surface-glass));
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.06);
   }
   .glass-strong {
-    background: hsl(var(--surface-glass));
+    background: hsl(var(--surface-glass-strong));
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
+    box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.08);
   }
 
-  /* Skeleton shimmer — premium */
+  /* ---- Surface elevations ---- */
+  .surface-card {
+    background-color: hsl(var(--card));
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.2s ease;
+  }
+  .surface-card:hover {
+    box-shadow: var(--shadow-md);
+  }
+  .surface-elevated {
+    background-color: hsl(var(--surface-elevated));
+    box-shadow: var(--shadow-md);
+  }
+  .surface-elevated-strong {
+    background-color: hsl(var(--surface-elevated));
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* ---- Skeleton shimmer ---- */
   @keyframes shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
@@ -144,10 +231,57 @@
     background: linear-gradient(
       90deg,
       hsl(var(--muted)) 25%,
-      hsl(var(--muted-foreground) / 0.08) 50%,
+      hsl(var(--muted-foreground) / 0.06) 50%,
       hsl(var(--muted)) 75%
     );
     background-size: 200% 100%;
     animation: shimmer 2s ease-in-out infinite;
+  }
+
+  /* ---- Focus glow ---- */
+  .focus-glow:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px hsl(var(--ring)), 0 0 20px hsl(var(--accent-glow));
+  }
+
+  /* ---- Squircle radius utilities ---- */
+  .radius-sm {
+    border-radius: calc(var(--radius) - 4px);
+  }
+  .radius-md {
+    border-radius: var(--radius);
+  }
+  .radius-lg {
+    border-radius: calc(var(--radius) + 4px);
+  }
+  .radius-xl {
+    border-radius: calc(var(--radius) + 10px);
+  }
+  .radius-2xl {
+    border-radius: calc(var(--radius) + 18px);
+  }
+
+  /* ---- Selection color ---- */
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+    color: hsl(var(--foreground));
+  }
+
+  /* ---- Smooth scrolling ---- */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* ---- Subtle grain texture overlay ---- */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
   }
 }

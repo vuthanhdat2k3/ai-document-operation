@@ -36,16 +36,16 @@ export function AgentSessionViewer({ session }: AgentSessionViewerProps) {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold">{displayType}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h2 className="text-xl font-semibold tracking-tight">{displayType}</h2>
+          <p className="mt-1 text-sm text-muted-foreground/60">
             Started {formatDate(session.started_at ?? session.created_at)}
-            {completedAt && ` \u2022 Completed ${formatDate(completedAt)}`}
+            {completedAt && <span> &middot; Completed {formatDate(completedAt)}</span>}
           </p>
         </div>
         <Badge
           variant={
             session.status === 'completed'
-              ? 'default'
+              ? 'success'
               : session.status === 'failed'
                 ? 'destructive'
                 : 'secondary'
@@ -59,29 +59,35 @@ export function AgentSessionViewer({ session }: AgentSessionViewerProps) {
       <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
-            <Clock className="h-5 w-5 text-muted-foreground" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary/50">
+              <Clock className="h-4 w-4 text-muted-foreground/60" />
+            </div>
             <div>
-              <p className="text-sm text-muted-foreground">Duration</p>
-              <p className="font-medium">{(totalDuration / 1000).toFixed(1)}s</p>
+              <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Duration</p>
+              <p className="text-sm font-medium tabular-nums">{(totalDuration / 1000).toFixed(1)}s</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
-            <Zap className="h-5 w-5 text-muted-foreground" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary/50">
+              <Zap className="h-4 w-4 text-muted-foreground/60" />
+            </div>
             <div>
-              <p className="text-sm text-muted-foreground">Tokens</p>
-              <p className="font-medium">{session.total_tokens?.toLocaleString() ?? '—'}</p>
+              <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Tokens</p>
+              <p className="text-sm font-medium tabular-nums">{session.total_tokens?.toLocaleString() ?? '\u2014'}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
-            <DollarSign className="h-5 w-5 text-muted-foreground" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary/50">
+              <DollarSign className="h-4 w-4 text-muted-foreground/60" />
+            </div>
             <div>
-              <p className="text-sm text-muted-foreground">Cost</p>
-              <p className="font-medium">
-                {displayCost != null ? `$${displayCost.toFixed(4)}` : '—'}
+              <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Cost</p>
+              <p className="text-sm font-medium tabular-nums">
+                {displayCost != null ? `$${displayCost.toFixed(4)}` : '\u2014'}
               </p>
             </div>
           </CardContent>
@@ -90,17 +96,22 @@ export function AgentSessionViewer({ session }: AgentSessionViewerProps) {
 
       {/* Error */}
       {session.error_message && (
-        <div className="rounded-md bg-destructive/10 p-4 text-destructive">
-          <p className="text-sm font-medium">Error</p>
-          <p className="mt-1 text-sm">{session.error_message}</p>
+        <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-destructive/10">
+            <XCircle className="h-4 w-4 text-destructive" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-destructive">Error</p>
+            <p className="mt-1 text-sm text-destructive/80">{session.error_message}</p>
+          </div>
         </div>
       )}
 
       {/* Steps */}
       <div className="space-y-3">
-        <h3 className="font-semibold">Execution Steps ({session.steps.length})</h3>
+        <h3 className="text-sm font-semibold">Execution Steps ({session.steps.length})</h3>
         {session.steps.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No steps recorded.</p>
+          <p className="text-sm text-muted-foreground/60">No steps recorded.</p>
         ) : (
           session.steps.map((step, index) => (
             <StepCard key={step.step_index ?? step.step_order ?? index} step={step} index={index} />
@@ -122,26 +133,32 @@ function StepCard({ step, index }: { step: AgentStep; index: number }) {
   const isSuccess = stepStatus === 'completed' || stepStatus === 'success';
 
   return (
-    <Card>
+    <Card className="transition-all duration-200 hover:shadow-sm">
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {isSuccess ? (
-              <CheckCircle className="h-5 w-5 text-green-500" />
-            ) : (
-              <XCircle className="h-5 w-5 text-destructive" />
-            )}
+            <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+              isSuccess
+                ? 'bg-success/10 text-success'
+                : 'bg-destructive/10 text-destructive'
+            }`}>
+              {isSuccess ? (
+                <CheckCircle className="h-3.5 w-3.5" />
+              ) : (
+                <XCircle className="h-3.5 w-3.5" />
+              )}
+            </div>
             <div>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-[10px] text-muted-foreground/50">
                 {step.step_type ?? 'step'} #{stepNumber}
               </span>
-              <h4 className="font-medium">{stepName}</h4>
+              <h4 className="text-sm font-medium">{stepName}</h4>
             </div>
           </div>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span>{(stepDuration / 1000).toFixed(2)}s</span>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground/50">
+            <span className="tabular-nums">{(stepDuration / 1000).toFixed(2)}s</span>
             {step.tokens_used != null && (
-              <span>{step.tokens_used.toLocaleString()} tok</span>
+              <span className="tabular-nums">{step.tokens_used.toLocaleString()} tok</span>
             )}
           </div>
         </div>
@@ -149,16 +166,16 @@ function StepCard({ step, index }: { step: AgentStep; index: number }) {
           <div className="mt-3 grid grid-cols-2 gap-4">
             {displayInput && (
               <div>
-                <p className="mb-1 text-xs font-medium text-muted-foreground">Input</p>
-                <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+                <p className="mb-1 text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider">Input</p>
+                <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-lg bg-secondary/30 p-3 text-xs leading-relaxed scrollbar-thin">
                   {typeof displayInput === 'string' ? displayInput : JSON.stringify(displayInput, null, 2)}
                 </pre>
               </div>
             )}
             {displayOutput && (
               <div>
-                <p className="mb-1 text-xs font-medium text-muted-foreground">Output</p>
-                <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+                <p className="mb-1 text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider">Output</p>
+                <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-lg bg-secondary/30 p-3 text-xs leading-relaxed scrollbar-thin">
                   {typeof displayOutput === 'string' ? displayOutput : JSON.stringify(displayOutput, null, 2)}
                 </pre>
               </div>

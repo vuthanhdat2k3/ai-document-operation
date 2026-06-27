@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Bot, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,15 +16,15 @@ export default function AgentSessionDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" asChild className="h-8 w-8">
           <Link href="/agent">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Agent Session</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-lg font-semibold tracking-tight">Agent Session</h2>
+          <p className="text-sm text-muted-foreground/70">
             View agent execution details, steps, and results.
           </p>
         </div>
@@ -32,25 +32,25 @@ export default function AgentSessionDetailPage({
 
       {isLoading && (
         <div className="flex items-center justify-center py-20">
-          <div className="flex flex-col items-center gap-4 text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Loading session details...</p>
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/60" />
+            <p className="text-sm text-muted-foreground/60">Loading session details...</p>
           </div>
         </div>
       )}
 
       {error && (
         <Card className="border-destructive/20">
-          <CardContent className="flex items-center gap-4 p-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
+          <CardContent className="flex items-center gap-4 p-5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-destructive/10">
+              <AlertTriangle className="h-[18px] w-[18px] text-destructive" />
             </div>
             <div>
-              <p className="font-medium text-destructive">Failed to load session</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm font-medium text-destructive">Failed to load session</p>
+              <p className="text-xs text-muted-foreground/70 mt-0.5">
                 {error instanceof Error ? error.message : 'An unexpected error occurred.'}
               </p>
-              <Button variant="outline" size="sm" className="mt-2" asChild>
+              <Button variant="outline" size="sm" className="mt-2 h-7 text-xs" asChild>
                 <Link href="/agent">Back to Agent</Link>
               </Button>
             </div>

@@ -42,27 +42,24 @@ function TaskTypeSelector({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
       {TASK_TYPES.map((task) => {
         const Icon = task.icon;
-        const isSelected = value === task.value;
+        const active = value === task.value;
         return (
           <button
             key={task.value}
             type="button"
             onClick={() => onChange(task.value)}
-            className={`
-              flex flex-col items-center gap-2 rounded-lg border-2 p-4 text-center transition-all
-              ${
-                isSelected
-                  ? 'border-primary bg-primary/5 text-primary ring-2 ring-primary/20'
-                  : 'border-muted bg-card hover:border-muted-foreground/30 hover:bg-accent/50'
-              }
-            `}
+            className={`flex flex-col items-center gap-1.5 rounded-xl border p-3.5 text-center transition-all duration-200 active:scale-[0.98] ${
+              active
+                ? 'border-primary/30 bg-primary/[0.04] ring-1 ring-primary/[0.15]'
+                : 'border-border/40 bg-card hover:border-border/60 hover:bg-accent/30'
+            }`}
           >
-            <Icon className={`h-6 w-6 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
-            <span className="text-sm font-medium">{task.label}</span>
-            <span className="text-xs text-muted-foreground line-clamp-2">{task.description}</span>
+            <Icon className={`h-4.5 w-4.5 ${active ? 'text-primary' : 'text-muted-foreground/50'}`} />
+            <span className="text-xs font-medium">{task.label}</span>
+            <span className="text-[10px] text-muted-foreground/50 leading-tight line-clamp-2">{task.description}</span>
           </button>
         );
       })}
@@ -82,45 +79,54 @@ function SessionCard({ session }: { session: AgentSession }) {
     <button
       type="button"
       onClick={() => router.push(`/agent/sessions/${session.id}`)}
-      className="w-full rounded-lg border bg-card p-4 text-left transition-all hover:border-primary/50 hover:shadow-sm"
+      className="group w-full rounded-lg border border-border/30 bg-card p-3.5 text-left transition-all duration-200 hover:bg-accent/20 active:scale-[0.99]"
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {session.status === 'completed' ? (
-            <CheckCircle className="h-5 w-5 text-green-500" />
-          ) : session.status === 'failed' ? (
-            <XCircle className="h-5 w-5 text-destructive" />
-          ) : (
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          )}
+          <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+            session.status === 'completed'
+              ? 'bg-success/10 text-success'
+              : session.status === 'failed'
+                ? 'bg-destructive/10 text-destructive'
+                : 'bg-secondary/50 text-muted-foreground/60'
+          }`}>
+            {session.status === 'completed' ? (
+              <CheckCircle className="h-4 w-4" />
+            ) : session.status === 'failed' ? (
+              <XCircle className="h-4 w-4" />
+            ) : (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+          </div>
           <div>
-            <p className="font-medium">
+            <p className="text-sm font-medium">
               {(session.agent_type?.charAt(0).toUpperCase() ?? '') + (session.agent_type?.slice(1) ?? '')}
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground/50">
               {formatDate(session.started_at ?? session.created_at)}
-              {duration !== null && ` · ${duration}s`}
+              {duration !== null && ` \u00b7 ${duration}s`}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <Badge
             variant={
               session.status === 'completed'
-                ? 'default'
+                ? 'success'
                 : session.status === 'failed'
                   ? 'destructive'
                   : 'secondary'
             }
+            className="text-[10px] px-2 py-0.5"
           >
             {session.status}
           </Badge>
           {session.total_tokens != null && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[10px] text-muted-foreground/40 tabular-nums">
               {session.total_tokens.toLocaleString()} tok
             </span>
           )}
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 transition-all duration-200 group-hover:text-muted-foreground/50 group-hover:translate-x-0.5" />
         </div>
       </div>
     </button>
@@ -153,22 +159,25 @@ export default function AgentPage() {
   const sessions = sessionsData?.items ?? [];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* Page Header */}
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">AI Agent</h2>
-        <p className="mt-1 text-muted-foreground">
+        <h2 className="text-xl font-semibold tracking-tight">AI Agent</h2>
+        <p className="mt-1 text-sm text-muted-foreground/70">
           Run autonomous agent tasks on your documents.
         </p>
       </div>
 
       {/* Run Task Card */}
-      <Card className="border-primary/10 shadow-sm">
-        <CardHeader>
+      <Card className="border-primary/10">
+        <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-primary" />
-            <CardTitle>Run Agent Task</CardTitle>
+            <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-primary/[0.08]">
+              <Bot className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <CardTitle className="text-sm">Run Agent Task</CardTitle>
           </div>
-          <CardDescription>
+          <CardDescription className="text-xs">
             Describe what you want the agent to do. It will retrieve documents, reason, and execute
             tools to complete your request.
           </CardDescription>
@@ -176,13 +185,13 @@ export default function AgentPage() {
         <CardContent className="space-y-5">
           {/* Task Type */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Task Type</label>
+            <label className="mb-2 block text-xs font-medium text-foreground/80">Task Type</label>
             <TaskTypeSelector value={taskType} onChange={setTaskType} />
           </div>
 
           {/* Query Input */}
           <div>
-            <label htmlFor="agent-query" className="mb-2 block text-sm font-medium">
+            <label htmlFor="agent-query" className="mb-1.5 block text-xs font-medium text-foreground/80">
               Instructions
             </label>
             <textarea
@@ -190,15 +199,15 @@ export default function AgentPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="e.g., Analyze all vendor contracts for compliance risks and generate a remediation checklist..."
-              className="flex min-h-[120px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-[100px] w-full rounded-lg border border-input/60 bg-background/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground/40 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
             />
           </div>
 
           {/* Document ID (optional) */}
           <div>
-            <label htmlFor="agent-doc-id" className="mb-2 block text-sm font-medium">
+            <label htmlFor="agent-doc-id" className="mb-1.5 block text-xs font-medium text-foreground/80">
               Document ID{' '}
-              <span className="text-xs text-muted-foreground">(optional — scope to one document)</span>
+              <span className="text-[10px] text-muted-foreground/50">(optional &mdash; scope to one document)</span>
             </label>
             <input
               id="agent-doc-id"
@@ -206,29 +215,29 @@ export default function AgentPage() {
               value={documentId}
               onChange={(e) => setDocumentId(e.target.value)}
               placeholder="doc_a1b2c3d4e5"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-full rounded-lg border border-input/60 bg-background/50 px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground/40 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
 
           {/* Submit */}
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground/50">
               The agent will use up to 10 reasoning iterations.
             </p>
             <Button
               onClick={handleRun}
               disabled={!query.trim() || runTask.isPending}
-              size="lg"
-              className="gap-2"
+              size="sm"
+              className="gap-1.5 rounded-lg"
             >
               {runTask.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Running...
                 </>
               ) : (
                 <>
-                  <Play className="h-4 w-4" />
+                  <Play className="h-3.5 w-3.5" />
                   Run Task
                 </>
               )}
@@ -237,76 +246,79 @@ export default function AgentPage() {
 
           {/* Result */}
           {runTask.data && (
-            <Card className="border-green-500/20 bg-green-50/50 dark:bg-green-950/10">
-              <CardContent className="p-4">
-                <div className="mb-2 flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-sm font-medium text-green-700 dark:text-green-400">
-                    Task completed in {runTask.data.iterations} iterations
-                  </span>
-                  <Badge variant="outline" className="ml-auto">
-                    {(runTask.data.duration_ms / 1000).toFixed(1)}s
-                  </Badge>
+            <div className="rounded-lg border border-success/20 bg-success/[0.03] p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="flex h-5 w-5 items-center justify-center rounded-lg bg-success/10">
+                  <CheckCircle className="h-3 w-3 text-success" />
                 </div>
-                <p className="whitespace-pre-wrap text-sm text-muted-foreground line-clamp-6">
-                  {runTask.data.answer}
-                </p>
-                {runTask.data.session_id && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-2 gap-1"
-                    onClick={() =>
-                      window.open(`/agent/sessions/${runTask.data.session_id}`, '_self')
-                    }
-                  >
-                    <ArrowRight className="h-3 w-3" />
-                    View full session details
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
+                <span className="text-sm font-medium text-success">
+                  Task completed in {runTask.data.iterations} iterations
+                </span>
+                <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0 h-5">
+                  {(runTask.data.duration_ms / 1000).toFixed(1)}s
+                </Badge>
+              </div>
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground/80 line-clamp-6 leading-relaxed">
+                {runTask.data.answer}
+              </p>
+              {runTask.data.session_id && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 h-7 gap-1 rounded-lg text-xs"
+                  onClick={() =>
+                    window.open(`/agent/sessions/${runTask.data.session_id}`, '_self')
+                  }
+                >
+                  <ArrowRight className="h-3 w-3" />
+                  View full session details
+                </Button>
+              )}
+            </div>
           )}
 
           {/* Error */}
           {runTask.isError && (
-            <Card className="border-destructive/20 bg-destructive/5">
-              <CardContent className="flex items-center gap-3 p-4">
-                <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
-                <p className="text-sm text-destructive">
-                  {runTask.error instanceof Error
-                    ? runTask.error.message
-                    : 'Failed to run agent task. Please try again.'}
-                </p>
-              </CardContent>
-            </Card>
+            <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-destructive/10">
+                <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+              </div>
+              <p className="text-sm text-destructive">
+                {runTask.error instanceof Error
+                  ? runTask.error.message
+                  : 'Failed to run agent task. Please try again.'}
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>
 
       {/* Recent Sessions */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-muted-foreground" />
-            <CardTitle>Recent Sessions</CardTitle>
+            <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-secondary/50">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground/50" />
+            </div>
+            <CardTitle className="text-sm">Recent Sessions</CardTitle>
           </div>
-          <CardDescription>
+          <CardDescription className="text-xs">
             View the results and execution traces of past agent runs.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {sessionsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground/60">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Loading sessions...</span>
             </div>
           ) : sessions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Bot className="mb-3 h-12 w-12 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">No agent sessions yet.</p>
-              <p className="text-xs text-muted-foreground">
-                Run a task above to see results here.
-              </p>
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-secondary/50">
+                <Bot className="h-5 w-5 text-muted-foreground/30" />
+              </div>
+              <p className="text-sm text-muted-foreground/60">No agent sessions yet</p>
+              <p className="mt-1 text-xs text-muted-foreground/40">Run a task above to see results here</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -320,4 +332,3 @@ export default function AgentPage() {
     </div>
   );
 }
-

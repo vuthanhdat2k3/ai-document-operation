@@ -12,15 +12,15 @@ export default function DocumentDetailPage({
 }) {
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" asChild className="h-8 w-8">
           <Link href="/documents">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Document Details</h2>
-          <p className="text-muted-foreground">View and analyze document content.</p>
+          <h2 className="text-lg font-semibold tracking-tight">Document Details</h2>
+          <p className="text-sm text-muted-foreground/70">View and analyze document content.</p>
         </div>
       </div>
 

@@ -18,25 +18,29 @@ export default function Error({
 
   return (
     <div className="flex min-h-[400px] items-center justify-center p-6">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
-          <CardTitle className="mt-4 text-lg">Something went wrong</CardTitle>
-        </CardHeader>
-        <CardContent className="text-center">
-          <p className="mb-4 text-sm text-muted-foreground">
-            An unexpected error occurred. Please try again.
-          </p>
-          {error.digest && (
-            <p className="mb-4 font-mono text-xs text-muted-foreground">
-              Error ID: {error.digest}
+      <div className="animate-fade-up w-full max-w-sm">
+        <Card>
+          <CardHeader className="text-center pb-3">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-destructive/10">
+              <AlertTriangle className="h-6 w-6 text-destructive" />
+            </div>
+            <CardTitle className="text-base">Something went wrong</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="mb-4 text-sm text-muted-foreground/70">
+              An unexpected error occurred. Please try again.
             </p>
-          )}
-          <Button onClick={reset} variant="outline">
-            Try again
-          </Button>
-        </CardContent>
-      </Card>
+            {error.digest && (
+              <p className="mb-4 font-mono text-xs text-muted-foreground/50">
+                Error ID: {error.digest}
+              </p>
+            )}
+            <Button onClick={reset} size="sm">
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

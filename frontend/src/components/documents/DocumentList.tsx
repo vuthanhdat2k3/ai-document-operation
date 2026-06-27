@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Trash2, Eye, FileText, File, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Trash2, Eye, FileText, File, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,7 +16,7 @@ import {
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { useDocuments, useDeleteDocument } from '@/lib/hooks/useDocuments';
 import { formatFileSize, formatDate } from '@/lib/utils';
-import type { Document, DocumentStatus } from '@/types';
+import type { DocumentStatus } from '@/types';
 
 interface DocumentListProps {
   page?: number;
@@ -58,7 +58,7 @@ function SortButton({
   const isActive = currentSort.field === field;
   return (
     <button
-      className="flex items-center gap-1 hover:text-foreground"
+      className="flex items-center gap-1 hover:text-foreground transition-colors"
       onClick={() => onSort(field)}
       aria-label={`Sort by ${label}`}
     >
@@ -70,7 +70,7 @@ function SortButton({
           <ArrowDown className="h-3 w-3" />
         )
       ) : (
-        <ArrowUpDown className="h-3 w-3 opacity-50" />
+        <ArrowUpDown className="h-3 w-3 opacity-40" />
       )}
     </button>
   );
@@ -126,93 +126,104 @@ export function DocumentList({ page = 1, pageSize = 20, search, onPageChange }: 
   const totalPages = data?.pages ?? 1;
 
   if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <TableSkeleton rows={5} cols={6} />
-      </div>
-    );
+    return <TableSkeleton rows={5} cols={6} />;
   }
 
   if (error) {
     return (
-      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
-        <p className="text-destructive font-medium">Failed to load documents</p>
-        <p className="text-sm text-muted-foreground mt-1">Please try again later.</p>
+      <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-8 text-center">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10">
+          <AlertTriangle className="h-5 w-5 text-destructive" />
+        </div>
+        <p className="font-medium text-destructive">Failed to load documents</p>
+        <p className="mt-1 text-sm text-muted-foreground">Please try again later.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>
-              <SortButton field="filename" label="Name" currentSort={sortConfig} onSort={handleSort} />
-            </TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>
-              <SortButton field="file_size_bytes" label="Size" currentSort={sortConfig} onSort={handleSort} />
-            </TableHead>
-            <TableHead>
-              <SortButton field="status" label="Status" currentSort={sortConfig} onSort={handleSort} />
-            </TableHead>
-            <TableHead>
-              <SortButton field="uploaded_at" label="Uploaded" currentSort={sortConfig} onSort={handleSort} />
-            </TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {documents.length === 0 ? (
+      <div className="rounded-xl border border-border/30 bg-card shadow-sm">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                No documents found.
-              </TableCell>
+              <TableHead>
+                <SortButton field="filename" label="Name" currentSort={sortConfig} onSort={handleSort} />
+              </TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>
+                <SortButton field="file_size_bytes" label="Size" currentSort={sortConfig} onSort={handleSort} />
+              </TableHead>
+              <TableHead>
+                <SortButton field="status" label="Status" currentSort={sortConfig} onSort={handleSort} />
+              </TableHead>
+              <TableHead>
+                <SortButton field="uploaded_at" label="Uploaded" currentSort={sortConfig} onSort={handleSort} />
+              </TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
-          ) : (
-            documents.map((doc) => (
-              <TableRow key={doc.id}>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {fileIcon(doc.mime_type)}
-                    <span className="font-medium">{doc.filename}</span>
+          </TableHeader>
+          <TableBody>
+            {documents.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-12 text-center">
+                  <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-secondary/50">
+                    <FileText className="h-5 w-5 text-muted-foreground/50" />
                   </div>
-                </TableCell>
-                <TableCell className="uppercase text-xs">{doc.mime_type.split('/').pop()}</TableCell>
-                <TableCell className="font-mono text-sm">{formatFileSize(doc.file_size_bytes)}</TableCell>
-                <TableCell>
-                  <Badge variant={statusVariant[doc.status]}>{doc.status}</Badge>
-                </TableCell>
-                <TableCell>{formatDate(doc.uploaded_at)}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="icon" asChild aria-label={`View ${doc.filename}`}>
-                      <Link href={`/documents/${doc.id}`}>
-                        <Eye className="h-4 w-4" />
-                      </Link>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteMutation.mutate(doc.id)}
-                      disabled={deleteMutation.isPending}
-                      aria-label={`Delete ${doc.filename}`}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
+                  <p className="text-sm text-muted-foreground/60">No documents found</p>
                 </TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            ) : (
+              documents.map((doc) => (
+                <TableRow key={doc.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/[0.06]">
+                        {fileIcon(doc.mime_type)}
+                      </div>
+                      <span className="text-sm font-medium">{doc.filename}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground/70 uppercase font-mono">{doc.mime_type.split('/').pop()}</TableCell>
+                  <TableCell className="text-sm font-mono text-muted-foreground/80">{formatFileSize(doc.file_size_bytes)}</TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant[doc.status]} className="text-[10px] px-2 py-0.5">
+                      {doc.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground/70">{formatDate(doc.uploaded_at)}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-0.5">
+                      <Button variant="ghost" size="icon" asChild className="h-7 w-7" aria-label={`View ${doc.filename}`}>
+                        <Link href={`/documents/${doc.id}`}>
+                          <Eye className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteMutation.mutate(doc.id)}
+                        disabled={deleteMutation.isPending}
+                        className="h-7 w-7 text-muted-foreground/40 hover:text-destructive"
+                        aria-label={`Delete ${doc.filename}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages} — {data?.total ?? 0} documents
+        <div className="flex items-center justify-between rounded-lg bg-secondary/30 px-4 py-2.5">
+          <span className="text-xs text-muted-foreground/70">
+            Page {page} of {totalPages}
+            <span className="mx-1.5 text-muted-foreground/30">&middot;</span>
+            {data?.total ?? 0} documents
           </span>
           <div className="flex gap-2">
             <Button
@@ -220,6 +231,7 @@ export function DocumentList({ page = 1, pageSize = 20, search, onPageChange }: 
               size="sm"
               disabled={page <= 1}
               onClick={() => onPageChange?.(page - 1)}
+              className="h-7 text-xs"
             >
               Previous
             </Button>
@@ -228,6 +240,7 @@ export function DocumentList({ page = 1, pageSize = 20, search, onPageChange }: 
               size="sm"
               disabled={page >= totalPages}
               onClick={() => onPageChange?.(page + 1)}
+              className="h-7 text-xs"
             >
               Next
             </Button>

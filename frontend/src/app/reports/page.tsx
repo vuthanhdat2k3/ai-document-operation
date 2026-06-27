@@ -27,8 +27,8 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Reports</h2>
-        <p className="text-muted-foreground">
+        <h2 className="text-xl font-semibold tracking-tight">Reports</h2>
+        <p className="mt-1 text-sm text-muted-foreground/70">
           Generate and view document analysis reports.
         </p>
       </div>

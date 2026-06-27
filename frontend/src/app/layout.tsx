@@ -1,71 +1,25 @@
-'use client';
-
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
-import { usePathname } from 'next/navigation';
-import { AuthProvider } from '@/components/auth/AuthProvider';
-import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { GeistSans } from 'geist/font/sans';
+import { GeistMono } from 'geist/font/mono';
 import './globals.css';
+import { AppShell } from './app-shell';
 
-function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const isAuthPage = pathname === '/login' || pathname === '/register';
-
-  if (isAuthPage) {
-    return <>{children}</>;
-  }
-
-  return (
-    <ProtectedRoute>
-      <div className="flex h-screen overflow-hidden">
-        <Sidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <Header />
-          <main className="flex-1 overflow-auto p-6">
-            <div className="mx-auto max-w-[1400px]">
-              {children}
-            </div>
-          </main>
-        </div>
-      </div>
-    </ProtectedRoute>
-  );
-}
+export const metadata = {
+  title: 'AI Document Operations',
+  description: 'AI-powered document management and analysis',
+};
 
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 60 * 1000,
-            retry: 1,
-          },
-        },
-      }),
-  );
-
   return (
-    <html lang="en">
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <head>
-        <title>AI Document Operations</title>
-        <meta name="description" content="AI-powered document management and analysis" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body className="min-h-screen bg-background font-sans antialiased">
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <AppShell>
-              {children}
-            </AppShell>
-          </AuthProvider>
-        </QueryClientProvider>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

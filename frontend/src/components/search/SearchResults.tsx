@@ -9,51 +9,46 @@ import type { SearchResult } from '@/types';
 
 interface SearchResultsProps {
   results: SearchResult[];
-  isLoading?: boolean;
 }
 
-export function SearchResults({ results, isLoading }: SearchResultsProps) {
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
+export function SearchResults({ results }: SearchResultsProps) {
   if (results.length === 0) {
     return (
-      <div className="p-8 text-center text-muted-foreground">
-        No results found. Try a different search query.
+      <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary/50">
+          <FileText className="h-5 w-5 text-muted-foreground/40" />
+        </div>
+        <p className="text-sm font-medium text-muted-foreground/60">No results found</p>
+        <p className="text-xs text-muted-foreground/40">Try a different search query</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {results.map((result, index) => (
-        <Card key={`${result.document_id}-${index}`} className="transition-shadow hover:shadow-md">
+        <Card key={`${result.document_id}-${index}`} className="transition-all duration-200 hover:bg-accent/20">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">{result.filename}</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                <span className="text-sm font-medium truncate">{result.filename}</span>
                 {result.page_number && (
-                  <Badge variant="outline">Page {result.page_number}</Badge>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">p.{result.page_number}</Badge>
                 )}
               </div>
-              <Badge variant="secondary">
+              <Badge variant="secondary" className="text-[10px] shrink-0 ml-2">
                 {Math.round((result.relevance_score ?? result.score) * 100)}% match
               </Badge>
             </div>
           </CardHeader>
-          <CardContent>
-            <p className="mb-3 text-sm text-muted-foreground line-clamp-3">
+          <CardContent className="pt-1">
+            <p className="mb-2 text-sm text-muted-foreground/80 line-clamp-2 leading-relaxed">
               {result.chunk_text}
             </p>
-            <Button variant="ghost" size="sm" asChild>
+            <Button variant="ghost" size="sm" asChild className="h-7 text-xs">
               <Link href={`/documents/${result.document_id}`}>
-                <ExternalLink className="mr-2 h-3 w-3" />
+                <ExternalLink className="mr-1.5 h-3 w-3" />
                 View Document
               </Link>
             </Button>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
 import type { User, TokenResponse, LoginRequest, RegisterRequest } from '@/types';
 

@@ -3,7 +3,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import type { User, TokenResponse } from '@/types';
-import { Loader2 } from 'lucide-react';
+
 
 interface AuthContextValue {
   user: User | null;
@@ -32,9 +32,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (auth.isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="relative flex h-8 w-8 items-center justify-center">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+          </div>
+          <p className="text-sm text-muted-foreground/70">Loading...</p>
         </div>
       </div>
     );
