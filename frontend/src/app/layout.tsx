@@ -2,9 +2,34 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { AuthProvider } from '@/components/auth/AuthProvider';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import './globals.css';
+
+function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isAuthPage = pathname === '/login' || pathname === '/register';
+
+  if (isAuthPage) {
+    return <>{children}</>;
+  }
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar />
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <Header />
+        <main className="flex-1 overflow-auto p-6">
+          <div className="mx-auto max-w-[1400px]">
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
 
 export default function RootLayout({
   children,
@@ -32,17 +57,11 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-background font-sans antialiased">
         <QueryClientProvider client={queryClient}>
-          <div className="flex h-screen overflow-hidden">
-            <Sidebar />
-            <div className="flex flex-1 flex-col overflow-hidden">
-              <Header />
-              <main className="flex-1 overflow-auto p-6">
-                <div className="mx-auto max-w-[1400px]">
-                  {children}
-                </div>
-              </main>
-            </div>
-          </div>
+          <AuthProvider>
+            <AppShell>
+              {children}
+            </AppShell>
+          </AuthProvider>
         </QueryClientProvider>
       </body>
     </html>
