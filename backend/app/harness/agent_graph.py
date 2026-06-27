@@ -3,14 +3,21 @@
 Builds an appropriate LangGraph (or fallback state machine) for any
 ``AgentSpec``.  Supports both tool-using agents (ReAct loop) and
 simple single-turn agents.
+
+All graph loops now support:
+
+* **Cancellation** — periodic ``CancelToken.check()``
+* **HIL gates** — pauses execution when a gate trigger condition matches
+* **Event emission** — broadcasts step updates via ``EventManager``
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
-from app.harness.agent_spec import AgentSpec
+from app.harness.agent_spec import AgentSpec, HILGateConfig
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +247,100 @@ def _make_synthesize_node(spec: AgentSpec) -> Any:
 # ── Fallback graphs (no LangGraph) ──────────────────────────────────────
 
 
+async def _check_hil_gates(
+    spec: AgentSpec,
+    state: dict,
+    session_id: str,
+) -> dict | None:
+    """Check configured HIL gates and pause if a trigger matches.
+
+    Returns the HIL decision dict if a gate was triggered, None otherwise.
+    """
+    gates: list[HILGateConfig] = spec.guardrails.hil_gates
+    if not gates:
+        return None
+
+    current_step = state.get("current_step", "")
+    pending_tool = state.get("pending_tool")
+    iteration = state.get("iteration", 0)
+
+    for gate in gates:
+        trigger = gate.trigger_condition
+
+        if trigger == "before_tool_call" and pending_tool and pending_tool.get("name"):
+            pass  # will trigger
+        elif trigger == "before_synthesize" and current_step == "synthesize":
+            pass  # will trigger
+        elif trigger.startswith("on_iteration:"):
+            target = int(trigger.split(":", 1)[1])
+            if iteration < target:
+                continue
+        else:
+            continue
+
+        from app.harness.hil_service import HILService
+
+        hil = HILService()
+        context = {
+            "step": current_step,
+            "iteration": iteration,
+            "pending_tool": str(pending_tool.get("name", "")) if pending_tool else None,
+        }
+        decision = await hil.request_approval(
+            session_id=session_id,
+            gate=gate,
+            context=context,
+        )
+        return decision
+
+    return None
+
+
+async def _emit_step_event(session_id: str, state: dict, step_type: str) -> None:
+    """Emit a step event via the EventManager (fire-and-forget safe)."""
+    from app.harness.event_manager import get_event_manager
+
+    mgr = get_event_manager()
+    if mgr.is_connected(session_id):
+        await mgr.emit_step(
+            session_id,
+            {
+                "step_type": step_type,
+                "iteration": state.get("iteration", 0),
+                "current_step": state.get("current_step", ""),
+                "final_answer": state.get("final_answer"),
+                "pending_tool": state.get("pending_tool"),
+            },
+        )
+
+
+def _with_cancel_check(
+    coro: Any,
+    state: dict,
+) -> Any:
+    """Wrap a coroutine to check cancel token before execution.
+
+    The cancel token is expected in ``state.get("metadata", {}).get("session_id")``
+    or in ``state["session_id"]``.
+    """
+    session_id = (
+        state.get("metadata", {}).get("session_id")
+        or state.get("session_id", "")
+    )
+
+    async def _wrapped() -> Any:
+        if session_id:
+            from app.harness.cancel_token import get_cancel_token
+
+            token = get_cancel_token(session_id)
+            if token:
+                token.check()
+        return await coro
+
+    return _wrapped()
+
+
+
 class _FallbackSimpleGraph:
     """Simple prompt → answer loop (no LangGraph)."""
 
@@ -252,8 +353,17 @@ class _FallbackSimpleGraph:
         return asyncio.get_event_loop().run_until_complete(self.ainvoke(state))
 
     async def ainvoke(self, state: dict) -> dict:
-        result = await self._synthesize(state)
-        return {**state, **result}
+        session_id = state.get("metadata", {}).get("session_id") or state.get("session_id", "")
+        current = dict(state)
+
+        result = await _with_cancel_check(self._synthesize(current), current)
+        current = {**current, **result}
+        await _emit_step_event(session_id, current, "synthesize")
+
+        # HIL: before_synthesize gate
+        await _check_hil_gates(self._spec, current, session_id)
+
+        return current
 
 
 class _FallbackReActGraph:
@@ -274,23 +384,33 @@ class _FallbackReActGraph:
         return asyncio.get_event_loop().run_until_complete(self.ainvoke(state))
 
     async def ainvoke(self, state: dict) -> dict:
+        session_id = state.get("metadata", {}).get("session_id") or state.get("session_id", "")
         current = dict(state)
         max_iter = self._spec.guardrails.max_iterations
 
         while True:
-            reason_update = await self._reason(current)
+            await _check_hil_gates(self._spec, current, session_id)
+
+            reason_update = await _with_cancel_check(self._reason(current), current)
             current = {**current, **reason_update}
+            await _emit_step_event(session_id, current, "reason")
+
             pending = current.get("pending_tool")
             iteration = current.get("iteration", 0)
 
             if not pending or not pending.get("name") or iteration >= max_iter:
                 break
 
-            tool_update = await self._tool_call(current)
+            tool_update = await _with_cancel_check(self._tool_call(current), current)
             current = {**current, **tool_update}
+            await _emit_step_event(session_id, current, "tool_call")
 
-        synth_update = await self._synthesize(current)
-        return {**current, **synth_update}
+        synth_update = await _with_cancel_check(self._synthesize(current), current)
+        current = {**current, **synth_update}
+        await _emit_step_event(session_id, current, "synthesize")
+        await _check_hil_gates(self._spec, current, session_id)
+
+        return current
 
 
 class _FallbackDocumentGraph:
@@ -313,23 +433,34 @@ class _FallbackDocumentGraph:
         return asyncio.get_event_loop().run_until_complete(self.ainvoke(state))
 
     async def ainvoke(self, state: dict) -> dict:
+        session_id = state.get("metadata", {}).get("session_id") or state.get("session_id", "")
         current = dict(state)
         max_iter = self._spec.guardrails.max_iterations
 
-        retrieve_update = await self._retrieve(current)
+        retrieve_update = await _with_cancel_check(self._retrieve(current), current)
         current = {**current, **retrieve_update}
+        await _emit_step_event(session_id, current, "retrieve")
 
         while True:
-            reason_update = await self._reason(current)
+            await _check_hil_gates(self._spec, current, session_id)
+
+            reason_update = await _with_cancel_check(self._reason(current), current)
             current = {**current, **reason_update}
+            await _emit_step_event(session_id, current, "reason")
+
             pending = current.get("pending_tool")
             iteration = current.get("iteration", 0)
 
             if not pending or not pending.get("name") or iteration >= max_iter:
                 break
 
-            tool_update = await self._tool_call(current)
+            tool_update = await _with_cancel_check(self._tool_call(current), current)
             current = {**current, **tool_update}
+            await _emit_step_event(session_id, current, "tool_call")
 
-        synth_update = await self._synthesize(current)
-        return {**current, **synth_update}
+        synth_update = await _with_cancel_check(self._synthesize(current), current)
+        current = {**current, **synth_update}
+        await _emit_step_event(session_id, current, "synthesize")
+        await _check_hil_gates(self._spec, current, session_id)
+
+        return current

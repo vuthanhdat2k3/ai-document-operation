@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 from app.agents.safety import CostTracker, MaxIterationGuard, WallClockGuard
 from app.agents.state import AgentState
+from app.harness.cancel_token import AgentCancelledError, unregister_cancel_token
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +279,15 @@ class AgentService:
             input_data=input_data,
         )
 
+        # Register cancel token so the cancel API can signal this execution
+        from app.harness.cancel_token import CancelToken, register_cancel_token, unregister_cancel_token
+
+        cancel_token = CancelToken()
+        register_cancel_token(str(session_id), cancel_token)
+
+        # Also inject session_id + cancel_token into initial state for graph nodes
+        initial_state["metadata"]["session_id"] = str(session_id)
+
         try:
             from app.harness.agent_graph import build_agent_graph
 
@@ -324,6 +334,37 @@ class AgentService:
                 agent_name=agent_name,
             )
 
+        except AgentCancelledError:
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            logger.info("Agent '%s' execution cancelled for session %s", agent_name, session_id)
+            try:
+                await self._update_session(
+                    db=db,
+                    session_id=session_id,
+                    status="cancelled",
+                    output_data={"answer": "", "iterations": 0},
+                    error_message="Cancelled by user",
+                    completed_at=datetime.now(UTC),
+                )
+                await db.commit()
+            except Exception:
+                logger.error("Failed to update session on cancel", exc_info=True)
+                await db.rollback()
+
+            from app.harness.event_manager import get_event_manager
+            await get_event_manager().emit_cancelled(str(session_id))
+
+            return AgentResult(
+                answer="Agent execution was cancelled.",
+                steps=[],
+                cost=self.cost_tracker.summary(),
+                iterations=0,
+                session_id=str(session_id),
+                status="cancelled",
+                duration_ms=elapsed_ms,
+                agent_name=agent_name,
+            )
+
         except Exception as e:
             elapsed_ms = int((time.monotonic() - start) * 1000)
             logger.error("Agent '%s' execution failed: %s", agent_name, e, exc_info=True)
@@ -351,6 +392,8 @@ class AgentService:
                 duration_ms=elapsed_ms,
                 agent_name=agent_name,
             )
+        finally:
+            unregister_cancel_token(str(session_id))
 
     async def _execute_legacy(
         self,

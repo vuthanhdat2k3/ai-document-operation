@@ -1,9 +1,12 @@
 """Agent API endpoints for task execution and session history."""
 
+import asyncio
+import json
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -460,41 +463,169 @@ class RouteRunRequest(BaseModel):
     query: str = Field(..., description="Query to route to the best agent")
 
 
-@router.post("/route/run", response_model=ChainRunResponse)
-async def run_route_query(body: RouteRunRequest) -> ChainRunResponse:
-    from app.harness.agent_registry import get_agent_registry
+@router.post("/sessions/{session_id}/cancel", status_code=200)
+async def cancel_agent_session(
+    session_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> dict:
+    """Request cancellation of a running agent session (must own the session).
 
-    registry = get_agent_registry()
-    if not registry.has("router"):
-        raise HTTPException(status_code=501, detail="Router agent not available")
+    Uses the session's ``CancelToken`` to cooperatively stop execution.
+    The session status will be updated to ``cancelled`` when the graph
+    loop checks the cancellation flag.
+    """
+    from app.harness.cancel_token import cancel_session, get_cancel_token
+    from sqlalchemy import select
+    from app.db.models.agent import AgentSession as AgentSessionModel
 
-    from app.db.session import get_async_session
-    from app.services.agent_service import AgentService
+    # Verify ownership
+    stmt = select(AgentSessionModel).where(
+        AgentSessionModel.id == session_id,
+        AgentSessionModel.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
-    input_data: dict[str, Any] = {
-        "query": body.query,
-        "messages": [{"role": "user", "content": body.query}],
-    }
+    if session.status not in ("running", "paused"):
+        raise HTTPException(status_code=409, detail=f"Session is {session.status}, cannot cancel")
 
-    async with get_async_session() as db:
-        service = AgentService(max_iterations=3)
-        result = await service.run_agent(
-            agent_name="router",
-            input_data=input_data,
+    cancelled = cancel_session(str(session_id))
+    if not cancelled:
+        # No CancelToken — update status directly
+        from app.services.agent_service import AgentService
+        svc = AgentService()
+        await svc._update_session(
             db=db,
+            session_id=session_id,
+            status="cancelled",
+            error_message="Cancelled by user",
+            completed_at=datetime.now(UTC),
+        )
+        await db.commit()
+        from app.harness.event_manager import get_event_manager
+        await get_event_manager().emit_cancelled(str(session_id))
+
+    return {"session_id": str(session_id), "status": "cancelled", "message": "Cancellation requested"}
+
+
+# ── Human-in-the-loop endpoints ─────────────────────────────────────────
+
+
+class HILApproveRequest(BaseModel):
+    reason: str = Field("", description="Optional reason / feedback")
+
+
+@router.get("/hil/pending", response_model=list[dict[str, Any]])
+async def list_pending_hil() -> list[dict[str, Any]]:
+    """List all pending human-in-the-loop requests."""
+    from app.harness.hil_service import get_hil_service
+    return get_hil_service().list_pending()
+
+
+@router.post("/hil/{hil_id}/approve", status_code=200)
+async def approve_hil(
+    hil_id: str,
+    body: HILApproveRequest = HILApproveRequest(),
+) -> dict:
+    """Approve a pending HIL request, resuming agent execution."""
+    from app.harness.hil_service import HILNotFoundError, get_hil_service
+
+    try:
+        request = await get_hil_service().approve(hil_id, reason=body.reason)
+    except HILNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    # Notify WebSocket clients
+    session_id = request.get("session_id", "")
+    if session_id:
+        from app.harness.event_manager import get_event_manager
+        await get_event_manager().emit_step(
+            session_id,
+            {"event": "hil_resolved", "hil_id": hil_id, "decision": "approved"},
         )
 
-    return ChainRunResponse(
-        steps=[
-            ChainStepResponse(
-                agent_name="router",
-                query=body.query,
-                answer=result.answer,
-                session_id=result.session_id,
-                iterations=result.iterations,
-                status=result.status,
-            )
-        ],
-        final_answer=result.answer,
-        total_iterations=result.iterations,
-    )
+    return {"hil_id": hil_id, "status": "approved"}
+
+
+@router.post("/hil/{hil_id}/reject", status_code=200)
+async def reject_hil(
+    hil_id: str,
+    body: HILApproveRequest = HILApproveRequest(),
+) -> dict:
+    """Reject a pending HIL request, resuming agent execution with feedback."""
+    from app.harness.hil_service import HILNotFoundError, get_hil_service
+
+    try:
+        request = await get_hil_service().reject(hil_id, reason=body.reason)
+    except HILNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    session_id = request.get("session_id", "")
+    if session_id:
+        from app.harness.event_manager import get_event_manager
+        await get_event_manager().emit_step(
+            session_id,
+            {"event": "hil_resolved", "hil_id": hil_id, "decision": "rejected"},
+        )
+
+    return {"hil_id": hil_id, "status": "rejected"}
+
+
+# ── WebSocket streaming endpoint ─────────────────────────────────────────
+
+
+@router.websocket("/sessions/{session_id}/stream")
+async def stream_agent_session(
+    websocket: WebSocket,
+    session_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> None:
+    """WebSocket endpoint for real-time agent execution streaming.
+
+    Connects to the event manager for the given session and forwards
+    all events (steps, HIL requests, errors, completion) to the client.
+
+    Protocol::
+
+        Server → Client:  JSON event objects
+        Client → Server:  ``{"type": "ping"}`` (keepalive)
+
+    Event format::
+
+        {
+            "event": "step" | "hil_request" | "error" | "completed" | "cancelled" | "paused",
+            "session_id": "...",
+            "timestamp": 1234567890.123,
+            "data": { ... }
+        }
+    """
+    from app.harness.event_manager import get_event_manager
+
+    await websocket.accept()
+    mgr = get_event_manager()
+    await mgr.connect(session_id, websocket)
+
+    try:
+        while True:
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+                msg = json.loads(data) if data.strip() else {}
+                if msg.get("type") == "ping":
+                    await websocket.send_text(json.dumps({"type": "pong"}))
+            except asyncio.TimeoutError:
+                # Send keepalive ping
+                try:
+                    await websocket.send_text(json.dumps({"type": "ping"}))
+                except Exception:
+                    break
+            except Exception:
+                break
+    finally:
+        mgr.disconnect(session_id, websocket)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
