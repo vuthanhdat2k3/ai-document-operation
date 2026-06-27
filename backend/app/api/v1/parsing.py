@@ -15,6 +15,7 @@ from app.api.schemas.parsing import (
     ParseRequest,
     ParseStatusResponse,
 )
+from app.auth.dependencies import get_current_user_id
 from app.db.session import get_db
 from app.deps import get_redis
 from app.services.parsing_service import (
@@ -29,6 +30,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["parsing"])
 
 
+async def _verify_document_ownership(
+    document_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Raise NotFoundError if the document does not belong to the user."""
+    from sqlalchemy import select
+    from app.db.models.document import Document
+
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.user_id == user_id,
+            Document.deleted_at.is_(None),
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise NotFoundError(f"Document {document_id} not found")
+
+
 async def _get_parsing_service(
     redis_client: aioredis.Redis = Depends(get_redis),  # noqa: B008
 ) -> ParsingService:
@@ -39,25 +60,13 @@ async def _get_parsing_service(
 @router.post("/{document_id}/parse", response_model=ParseStatusResponse, status_code=202)
 async def enqueue_parse(
     document_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     body: ParseRequest | None = None,
     service: ParsingService = Depends(_get_parsing_service),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> ParseStatusResponse:
-    """Enqueue a document for background parsing.
-
-    Returns a task ID that can be used to poll for status via the
-    ``GET /{document_id}/parse-status`` endpoint.
-
-    Args:
-        document_id: UUID of the document to parse.
-        body: Optional parse request body (currently unused, reserved for
-            future parser options).
-        service: Injected ``ParsingService``.
-        db: Injected async database session.
-
-    Returns:
-        Initial parse status with task ID and ``queued`` status.
-    """
+    """Enqueue a document for background parsing (must own the document)."""
+    await _verify_document_ownership(document_id, user_id, db)
     try:
         task_id = await service.enqueue_parse(document_id, db)
     except ParsingServiceError as exc:
@@ -75,21 +84,12 @@ async def enqueue_parse(
 @router.get("/{document_id}/parse-status", response_model=ParseStatusResponse)
 async def get_parse_status(
     document_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     service: ParsingService = Depends(_get_parsing_service),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> ParseStatusResponse:
-    """Poll the parsing status for a document.
-
-    The task ID is derived from the document ID using the convention
-    ``parse:{document_id}`` which matches the job ID format used when
-    enqueuing.
-
-    Args:
-        document_id: UUID of the document being parsed.
-        service: Injected ``ParsingService``.
-
-    Returns:
-        Current parse status including progress and any error message.
-    """
+    """Poll the parsing status for a document (must own the document)."""
+    await _verify_document_ownership(document_id, user_id, db)
     task_id = f"parse:{document_id}"
     try:
         status_data = await service.get_parse_status(task_id)
@@ -107,22 +107,12 @@ async def get_parse_status(
 @router.get("/{document_id}/parsed", response_model=ParsedContentResponse)
 async def get_parsed_content(
     document_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     service: ParsingService = Depends(_get_parsing_service),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> ParsedContentResponse:
-    """Retrieve the parsed content of a document.
-
-    Returns the per-page text, confidence scores, and quality metadata
-    produced by the parsing worker.
-
-    Args:
-        document_id: UUID of the document.
-        service: Injected ``ParsingService``.
-        db: Injected async database session.
-
-    Returns:
-        Full parsed content for the document.
-    """
+    """Retrieve the parsed content of a document (must own the document)."""
+    await _verify_document_ownership(document_id, user_id, db)
     try:
         content = await service.get_parsed_content(document_id, db)
     except ParsingServiceError as exc:
@@ -157,17 +147,11 @@ async def get_parsed_content(
 @router.post("/{document_id}/index", status_code=200)
 async def index_document(
     document_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict:
-    """Index a parsed document: chunk text, generate embeddings, store in Qdrant.
-
-    Args:
-        document_id: UUID of the document to index.
-        db: Async database session.
-
-    Returns:
-        Indexing result with chunk count.
-    """
+    """Index a parsed document: chunk text, generate embeddings, store in Qdrant (must own the document)."""
+    await _verify_document_ownership(document_id, user_id, db)
     import hashlib
     from sqlalchemy import select, delete
     from app.db.models.document import Document

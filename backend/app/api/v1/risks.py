@@ -13,6 +13,7 @@ from app.api.schemas.risks import (
     MissingClauseResponse,
     RiskItemResponse,
 )
+from app.auth.dependencies import get_current_user_id
 from app.db.session import get_db
 from app.services.risk_service import (
     DocumentNotFoundError,
@@ -27,17 +28,35 @@ async def _get_risk_service() -> RiskService:
     return RiskService()
 
 
+async def _verify_document_ownership(
+    document_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Raise NotFoundError if the document does not belong to the user."""
+    from sqlalchemy import select
+    from app.db.models.document import Document
+
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.user_id == user_id,
+            Document.deleted_at.is_(None),
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise NotFoundError(f"Document {document_id} not found")
+
+
 @router.post("/{document_id}/analyze", response_model=AnalysisResultResponse)
 async def analyze_document(
     document_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     service: RiskService = Depends(_get_risk_service),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> AnalysisResultResponse:
-    """Run full risk analysis on a document.
-
-    Executes the detection pipeline (risks, missing clauses, anomalies),
-    generates a checklist, and persists risk items.
-    """
+    """Run full risk analysis on a document (must own the document)."""
+    await _verify_document_ownership(document_id, user_id, db)
     try:
         result = await service.analyze(str(document_id), db)
         await db.commit()
@@ -100,10 +119,12 @@ async def analyze_document(
 @router.get("/{document_id}/risks", response_model=list[RiskItemResponse])
 async def get_risks(
     document_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     service: RiskService = Depends(_get_risk_service),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> list[RiskItemResponse]:
-    """Retrieve persisted risk items for a document."""
+    """Retrieve persisted risk items for a document (must own the document)."""
+    await _verify_document_ownership(document_id, user_id, db)
     try:
         rows = await service.get_risks(str(document_id), db)
     except DocumentNotFoundError as exc:
@@ -115,10 +136,12 @@ async def get_risks(
 @router.get("/{document_id}/checklist", response_model=list[ChecklistItemResponse])
 async def get_checklist(
     document_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     service: RiskService = Depends(_get_risk_service),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> list[ChecklistItemResponse]:
-    """Retrieve the generated checklist for a document."""
+    """Retrieve the generated checklist for a document (must own the document)."""
+    await _verify_document_ownership(document_id, user_id, db)
     try:
         rows = await service.get_checklist(str(document_id), db)
     except DocumentNotFoundError as exc:
