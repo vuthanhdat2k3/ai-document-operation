@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_user_id
 from app.db.session import get_db
 from app.services.agent_service import AgentResult, AgentService
 
@@ -82,8 +83,7 @@ class AgentSessionResponse(BaseModel):
     steps: list[dict[str, Any]]
 
 
-CURRENT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
+    
 
 class AgentInfoResponse(BaseModel):
     """Agent summary returned by GET /v1/agents."""
@@ -172,6 +172,7 @@ async def get_agent_info(agent_name: str) -> AgentInfoResponse:
 async def run_named_agent(
     agent_name: str,
     body: AgentRunByNameRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),
 ) -> AgentRunResponse:
     """Execute a named agent from the registry.
@@ -212,7 +213,7 @@ async def run_named_agent(
         agent_name=agent_name,
         input_data=input_data,
         db=db,
-        user_id=CURRENT_USER_ID,
+        user_id=user_id,
         document_id=document_id,
     )
 
@@ -291,6 +292,7 @@ async def list_agent_sessions(
 @router.post("/run", response_model=AgentRunResponse, status_code=200)
 async def run_agent_task(
     body: AgentRunRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> AgentRunResponse:
     """Execute an agent task.
@@ -329,7 +331,7 @@ async def run_agent_task(
         task_type=body.task_type,
         input_data=input_data,
         db=db,
-        user_id=CURRENT_USER_ID,
+        user_id=user_id,
         document_id=document_id,
     )
 

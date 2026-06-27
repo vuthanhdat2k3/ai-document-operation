@@ -8,12 +8,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.middleware.error_handler import NotFoundError, ValidationErrorDetail
+from app.auth.dependencies import get_current_user_id
 from app.db.session import get_db
 from app.services.chat_service import ChatSessionService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
-
-CURRENT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 def _get_service() -> ChatSessionService:
@@ -24,10 +23,10 @@ def _get_service() -> ChatSessionService:
 async def create_session(
     body: dict | None = None,
     service: ChatSessionService = Depends(_get_service),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict:
     """Create a new chat session."""
-    user_id = CURRENT_USER_ID
     title = (body or {}).get("title", "New Chat")
     document_id = (body or {}).get("document_id")
 
@@ -50,10 +49,10 @@ async def create_session(
 @router.get("/sessions")
 async def list_sessions(
     service: ChatSessionService = Depends(_get_service),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict:
     """List all chat sessions for the current user."""
-    user_id = CURRENT_USER_ID
     sessions, total = await service.list_sessions(user_id, db)
     return {
         "items": [
@@ -76,10 +75,10 @@ async def list_sessions(
 async def get_session(
     session_id: uuid.UUID,
     service: ChatSessionService = Depends(_get_service),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict:
     """Get a session with full message history."""
-    user_id = CURRENT_USER_ID
     try:
         session = await service.get_session(session_id, user_id, db)
     except ValueError as exc:
@@ -112,10 +111,10 @@ async def get_session(
 async def delete_session(
     session_id: uuid.UUID,
     service: ChatSessionService = Depends(_get_service),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> None:
     """Delete a chat session and all its messages."""
-    user_id = CURRENT_USER_ID
     try:
         await service.delete_session(session_id, user_id, db)
         await db.commit()

@@ -15,6 +15,7 @@ from app.api.schemas.documents import (
     DocumentUpdate,
     DownloadResponse,
 )
+from app.auth.dependencies import get_current_user_id
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.services.document_service import (
@@ -28,8 +29,6 @@ from app.services.validation import FileValidator
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-CURRENT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
 
 async def _get_document_service(
     db: AsyncSession = Depends(get_db),  # noqa: B008
@@ -41,19 +40,11 @@ async def _get_document_service(
     )
 
 
-async def _get_current_user_id() -> uuid.UUID:
-    """Placeholder dependency for the current authenticated user.
-
-    Will be replaced with actual JWT auth dependency.
-    """
-    return CURRENT_USER_ID
-
-
 @router.post("/", response_model=DocumentResponse, status_code=201)
 async def upload_document(
     file: UploadFile = File(...),  # noqa: B008
     service: DocumentService = Depends(_get_document_service),  # noqa: B008
-    user_id: uuid.UUID = Depends(_get_current_user_id),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> DocumentResponse:
     """Upload a document file."""
@@ -83,7 +74,7 @@ async def list_documents(
     status: str | None = None,
     document_type: str | None = None,
     service: DocumentService = Depends(_get_document_service),  # noqa: B008
-    user_id: uuid.UUID = Depends(_get_current_user_id),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> DocumentListResponse:
     """List documents with pagination and optional filters."""
@@ -109,7 +100,7 @@ async def list_documents(
 async def get_document(
     document_id: uuid.UUID,
     service: DocumentService = Depends(_get_document_service),  # noqa: B008
-    user_id: uuid.UUID = Depends(_get_current_user_id),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> DocumentDetailResponse:
     """Get a document by ID with pages and chunks summary."""
@@ -138,7 +129,7 @@ async def update_document(
     document_id: uuid.UUID,
     body: DocumentUpdate,
     service: DocumentService = Depends(_get_document_service),  # noqa: B008
-    user_id: uuid.UUID = Depends(_get_current_user_id),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> DocumentResponse:
     """Update document metadata."""
@@ -168,7 +159,7 @@ async def update_document(
 async def delete_document(
     document_id: uuid.UUID,
     service: DocumentService = Depends(_get_document_service),  # noqa: B008
-    user_id: uuid.UUID = Depends(_get_current_user_id),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> None:
     """Soft delete a document."""
@@ -185,7 +176,7 @@ async def delete_document(
 async def download_document(
     document_id: uuid.UUID,
     service: DocumentService = Depends(_get_document_service),  # noqa: B008
-    user_id: uuid.UUID = Depends(_get_current_user_id),  # noqa: B008
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> DownloadResponse:
     """Get a presigned download URL for a document."""

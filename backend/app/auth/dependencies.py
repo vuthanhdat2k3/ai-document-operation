@@ -91,3 +91,19 @@ def require_role(*roles: str):
         return current_user
 
     return _role_checker
+
+
+async def get_current_user_id(
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> uuid.UUID:
+    """FastAPI dependency that returns the authenticated user's UUID.
+
+    Thin wrapper around ``get_current_user`` that extracts only the ID.
+
+    Args:
+        current_user: The authenticated user (from JWT).
+
+    Returns:
+        The user's UUID.
+    """
+    return current_user.id
