@@ -241,6 +241,15 @@ class AgentService:
         self.wall_clock_guard = WallClockGuard(max_seconds=max_wall_clock_seconds)
         self.wall_clock_guard.start()
 
+        # Rate limit check before execution
+        try:
+            from app.harness.rate_limiter import get_rate_limiter
+
+            uid_str = str(user_id) if user_id else None
+            await get_rate_limiter().acquire(agent_name, uid_str)
+        except Exception:
+            logger.warning("Rate limit check failed for %s (proceeding)", agent_name)
+
         messages = input_data.get("messages", [])
         if not messages and input_data.get("query"):
             messages = [{"role": "user", "content": input_data["query"]}]
@@ -318,6 +327,7 @@ class AgentService:
                     "cost": cost_summary,
                 },
                 total_tokens=cost_summary.get("total_tokens"),
+                total_cost_usd=cost_summary.get("total_cost_usd"),
                 completed_at=datetime.now(UTC),
             )
 
@@ -475,6 +485,7 @@ class AgentService:
                     "cost": cost_summary,
                 },
                 total_tokens=cost_summary.get("total_tokens"),
+                total_cost_usd=cost_summary.get("total_cost_usd"),
                 completed_at=datetime.now(UTC),
             )
 
@@ -613,6 +624,7 @@ class AgentService:
         output_data: dict[str, Any] | None = None,
         error_message: str | None = None,
         total_tokens: int | None = None,
+        total_cost_usd: float | None = None,
         completed_at: datetime | None = None,
     ) -> None:
         """Update an AgentSession record."""
@@ -635,6 +647,8 @@ class AgentService:
             session.error_message = error_message
         if total_tokens is not None:
             session.total_tokens = total_tokens
+        if total_cost_usd is not None:
+            session.total_cost_usd = total_cost_usd
         if completed_at is not None:
             session.completed_at = completed_at
 

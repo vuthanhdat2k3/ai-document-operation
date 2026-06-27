@@ -629,3 +629,138 @@ async def stream_agent_session(
             await websocket.close()
         except Exception:
             pass
+
+
+# ── Phase 4: Version history, plugins, rate limit, cost ──────────────────
+
+
+class VersionInfoResponse(BaseModel):
+    version: str
+    name: str
+    registered_at: str
+
+
+@router.get("/{agent_name}/versions", response_model=list[VersionInfoResponse])
+async def list_agent_versions(
+    agent_name: str,
+) -> list[VersionInfoResponse]:
+    """List all registered versions for a named agent."""
+    from app.harness.agent_registry import get_agent_registry
+
+    registry = get_agent_registry()
+    versions = registry.list_versions(agent_name)
+    return [
+        VersionInfoResponse(
+            version=v["version"],
+            name=v["name"],
+            registered_at=v.get("registered_at", ""),
+        )
+        for v in versions
+    ]
+
+
+class PluginReloadResponse(BaseModel):
+    status: str
+    loaded: list[str]
+    errors: list[str]
+
+
+@router.post("/plugins/reload", response_model=PluginReloadResponse)
+async def reload_plugins() -> PluginReloadResponse:
+    """Discover and load plugins from the configured plugin directories."""
+    from app.harness.plugin_loader import load_plugins
+
+    result = load_plugins()
+    loaded_names = []
+    errors_list = []
+    return PluginReloadResponse(
+        status="ok" if result.get("agents_loaded", 0) > 0 or result.get("tools_loaded", 0) > 0 else "empty",
+        loaded=loaded_names,
+        errors=errors_list,
+    )
+
+
+class RateLimitConfigResponse(BaseModel):
+    agent: str
+    limit: int
+    window_seconds: int
+    per_user: bool
+    allowed: bool
+    remaining: int
+    retry_after_seconds: float
+
+
+class RateLimitConfigUpdate(BaseModel):
+    max_calls: int | None = None
+    window_seconds: int | None = None
+    per_user: bool | None = None
+
+
+@router.get("/{agent_name}/rate-limit", response_model=RateLimitConfigResponse)
+async def get_rate_limit(
+    agent_name: str,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
+) -> RateLimitConfigResponse:
+    """Get current rate limit status and configuration for an agent."""
+    from app.harness.rate_limiter import get_rate_limiter
+
+    limiter = get_rate_limiter()
+    status = limiter.status(agent_name, str(user_id))
+    return RateLimitConfigResponse(**status)
+
+
+@router.put("/{agent_name}/rate-limit", response_model=RateLimitConfigResponse)
+async def set_rate_limit(
+    agent_name: str,
+    body: RateLimitConfigUpdate,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
+) -> RateLimitConfigResponse:
+    """Update rate limit configuration for an agent."""
+    from app.harness.rate_limiter import RateLimitConfig, get_rate_limiter
+
+    limiter = get_rate_limiter()
+    current = limiter.get_config(agent_name)
+    updated = RateLimitConfig(
+        max_calls=body.max_calls if body.max_calls is not None else current.max_calls,
+        window_seconds=body.window_seconds if body.window_seconds is not None else current.window_seconds,
+        per_user=body.per_user if body.per_user is not None else current.per_user,
+    )
+    limiter.set_config(agent_name, updated)
+    status = limiter.status(agent_name, str(user_id))
+    return RateLimitConfigResponse(**status)
+
+
+class AgentCostResponse(BaseModel):
+    agent_name: str
+    total_sessions: int
+    total_tokens: int
+    total_cost_usd: float
+
+
+@router.get("/{agent_name}/cost", response_model=AgentCostResponse)
+async def get_agent_cost(
+    agent_name: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> AgentCostResponse:
+    """Get aggregated cost and usage statistics for a named agent."""
+    from sqlalchemy import func, select
+
+    from app.db.models.agent import AgentSession as AgentSessionModel
+
+    stmt = (
+        select(
+            func.count(),
+            func.coalesce(func.sum(AgentSessionModel.total_tokens), 0),
+            func.coalesce(func.sum(AgentSessionModel.total_cost_usd), 0),
+        )
+        .where(AgentSessionModel.agent_type == agent_name)
+    )
+    result = await db.execute(stmt)
+    row = result.one()
+
+    return AgentCostResponse(
+        agent_name=agent_name,
+        total_sessions=row[0] or 0,
+        total_tokens=row[1] or 0,
+        total_cost_usd=float(row[2] or 0.0),
+    )
