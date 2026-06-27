@@ -14,6 +14,7 @@ from typing import Any
 
 import redis.asyncio as aioredis
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.db.models.document import Document
 from app.db.models.document_page import DocumentPage
@@ -105,7 +106,9 @@ async def process_document_task(ctx: dict[str, Any], document_id: str) -> dict[s
             await _update_progress(redis, task_id, "processing", 0.0)
 
             result = await db.execute(
-                select(Document).where(Document.id == doc_uuid)
+                select(Document)
+                .options(selectinload(Document.pages))
+                .where(Document.id == doc_uuid)
             )
             document = result.scalar_one_or_none()
             if document is None:

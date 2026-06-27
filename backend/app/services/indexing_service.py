@@ -57,12 +57,14 @@ class IndexingService:
         self,
         document_id: str | uuid.UUID,
         db: AsyncSession,
+        user_id: str | None = None,
     ) -> None:
         """Run the full indexing pipeline for a single document.
 
         Args:
             document_id: UUID of the document to index.
             db: Active async database session.
+            user_id: UUID of the document owner (for per-user isolation in Qdrant).
 
         Raises:
             IndexingError: If any stage of the pipeline fails.
@@ -81,7 +83,7 @@ class IndexingService:
         logger.info("Generating embeddings for %d chunks", len(texts))
         embedding_result = self._embedder.embed_texts(texts)
 
-        await self._upsert_to_qdrant(chunks, embedding_result, doc_id)
+        await self._upsert_to_qdrant(chunks, embedding_result, doc_id, user_id)
 
         await self._update_chunk_records(chunks, embedding_result, db)
 
@@ -106,6 +108,7 @@ class IndexingService:
         chunks: list[DocumentChunk],
         embedding_result: Any,
         doc_id: str,
+        user_id: str | None = None,
     ) -> None:
         """Upsert chunk vectors into the Qdrant collection."""
         from qdrant_client.models import PointStruct, SparseVector
@@ -118,6 +121,8 @@ class IndexingService:
                 "text": chunk.chunk_text,
                 "chunk_index": chunk.chunk_index,
             }
+            if user_id:
+                payload["user_id"] = user_id
             if chunk.chunk_metadata:
                 payload.update(chunk.chunk_metadata)
 

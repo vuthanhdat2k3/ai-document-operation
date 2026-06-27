@@ -112,13 +112,15 @@ async def get_document(
         raise NotFoundError(str(exc)) from exc
 
     doc_dict = DocumentResponse.model_validate(document).model_dump()
+    # Only load first 5 pages for preview — avoids loading MBs of OCR text
+    # for multi-page documents. Full pages can be fetched via a separate endpoint.
     doc_dict["pages"] = [
         {
             "page_number": p.page_number,
             "text": (p.ocr_text or "")[:2000],
             "confidence": float(p.ocr_confidence) if p.ocr_confidence else None,
         }
-        for p in (document.pages if hasattr(document, "pages") and document.pages else [])
+        for p in (document.pages or [])[:5]
     ]
     doc_dict["chunks"] = []
     return DocumentDetailResponse(**doc_dict)

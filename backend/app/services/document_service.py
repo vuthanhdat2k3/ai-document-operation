@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -149,9 +150,13 @@ class DocumentService:
             DocumentNotFoundError: If the document does not exist.
             DocumentPermissionError: If the document belongs to another user.
         """
-        stmt = select(Document).where(
-            Document.id == document_id,
-            Document.deleted_at.is_(None),
+        stmt = (
+            select(Document)
+            .options(selectinload(Document.pages))
+            .where(
+                Document.id == document_id,
+                Document.deleted_at.is_(None),
+            )
         )
         result = await db.execute(stmt)
         document = result.scalar_one_or_none()

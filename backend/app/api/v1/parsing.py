@@ -229,6 +229,7 @@ async def index_document(
                 payload={
                     "chunk_id": chunk_id,
                     "document_id": str(document_id),
+                    "user_id": str(user_id),
                     "page": chunk.metadata.get("page_number", 1),
                     "chunk_index": i,
                     "text": chunk.text,
