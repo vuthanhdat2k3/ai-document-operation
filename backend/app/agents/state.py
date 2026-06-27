@@ -1,4 +1,8 @@
-"""Agent state schema for LangGraph orchestration."""
+"""Agent state schema for LangGraph orchestration.
+
+Supports both the original document-centric state and generic agent harness
+usage via the ``context`` dict field.
+"""
 
 from __future__ import annotations
 
@@ -32,13 +36,32 @@ class AgentState(TypedDict):
 
     All nodes receive and return this state. Fields are additive — nodes
     should only modify fields they own and leave others untouched.
+
+    The ``context`` dict replaces ``documents`` for generic agent harness usage.
+    ``documents`` is **deprecated** — kept for backward compatibility with
+    existing graph nodes and will be removed in a future version.
     """
 
     messages: list[dict[str, Any]]
     """Conversation messages in OpenAI format (role/content)."""
 
+    context: dict[str, Any]
+    """Generic context for the agent run.
+
+    For document agents this contains ``{"documents": [...], "document_id": "..."}.
+    For other agents this can hold any domain-specific context
+    (code snippets, search results, structured input, …).
+
+    .. deprecated:: documents
+        Use ``context["documents"]`` instead of the top-level ``documents`` field.
+    """
+
     documents: list[dict[str, Any]]
-    """Retrieved document chunks from the retrieve node."""
+    """Retrieved document chunks from the retrieve node.
+
+    .. deprecated::
+        Use ``context["documents"]`` instead.  Kept for backward compatibility.
+    """
 
     current_step: str
     """Name of the step currently executing or last completed."""
@@ -56,10 +79,14 @@ class AgentState(TypedDict):
     """Synthesized answer produced by the synthesize node."""
 
     metadata: dict[str, Any]
-    """Arbitrary metadata: session_id, user_id, cost tracking, etc."""
+    """Arbitrary metadata: session_id, user_id, cost tracking, agent_name, etc."""
 
     task_type: str
-    """Type of agent task (e.g. 'qa', 'summarize', 'extract', 'risk')."""
+    """Type of agent task (e.g. 'qa', 'summarize', 'extract', 'risk').
+
+    .. deprecated::
+        Use ``metadata["agent_name"]`` instead.  Kept for backward compatibility.
+    """
 
     pending_tool: dict[str, Any] | None
     """Tool call pending execution: {name, arguments} or None."""
