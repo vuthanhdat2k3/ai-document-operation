@@ -39,8 +39,12 @@ export interface SearchResult {
   chunk_id: string;
   document_id: string;
   text: string;
+  chunk_text?: string;
   score: number;
+  relevance_score?: number;
   page: number;
+  page_number?: number;
+  filename?: string;
   metadata: Record<string, unknown>;
 }
 
@@ -48,6 +52,7 @@ export interface SearchResponse {
   results: SearchResult[];
   query: string;
   total: number;
+  took_ms?: number;
 }
 
 export interface Citation {
@@ -72,6 +77,7 @@ export interface ChatMessage {
   citations?: Citation[];
   groundedness_score?: number;
   timestamp: string;
+  created_at?: string;
   isStreaming?: boolean;
 }
 
@@ -98,31 +104,50 @@ export interface Report {
   content: string;
   format: string;
   status: string;
+  file_url?: string;
+  error_message?: string | null;
   created_at: string;
 }
 
 export interface AgentSession {
   id: string;
   user_id: string;
-  task_type: string;
+  agent_type: string;
+  task_type?: string;
   status: string;
   input_data: Record<string, unknown>;
   output_data: Record<string, unknown> | null;
-  steps: AgentStep[];
+  error_message?: string | null;
   total_cost: number;
+  total_cost_usd?: number | null;
   total_tokens: number;
+  started_at?: string | null;
+  completed_at?: string | null;
   created_at: string;
+  steps: AgentStep[];
+  model?: string | null;
 }
 
 export interface AgentStep {
-  id: string;
-  session_id: string;
+  id?: string;
+  session_id?: string;
+  step_index?: number;
+  step_order?: number;
   step_type: string;
-  step_order: number;
+  action?: string;
+  tool_name?: string;
   input_data: Record<string, unknown>;
   output_data: Record<string, unknown>;
-  latency_ms: number;
-  created_at: string;
+  reasoning?: string;
+  tokens_used?: number;
+  duration_ms: number;
+  latency_ms?: number;
+  status?: string;
+  input?: string;
+  output?: string;
+  cost?: number;
+  created_at?: string;
+  timestamp?: string;
 }
 
 export interface RiskItem {
@@ -176,6 +201,32 @@ export interface User {
   full_name: string;
   role: string;
   is_active: boolean;
+  created_at?: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  full_name: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface AuthState {
+  user: User | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
 }
 
 export interface DocumentDetail extends Document {

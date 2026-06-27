@@ -43,7 +43,7 @@ export function SearchResults({ results, isLoading }: SearchResultsProps) {
                 )}
               </div>
               <Badge variant="secondary">
-                {Math.round(result.relevance_score * 100)}% match
+                {Math.round((result.relevance_score ?? result.score) * 100)}% match
               </Badge>
             </div>
           </CardHeader>

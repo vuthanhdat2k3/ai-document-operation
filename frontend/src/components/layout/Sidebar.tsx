@@ -9,13 +9,16 @@ import {
   MessageSquare,
   FileBarChart,
   Bot,
+  User as UserIcon,
+  Shield,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/lib/store';
+import { useAuthContext } from '@/components/auth/AuthProvider';
 
-const navItems = [
+const mainNavItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/search', label: 'Search', icon: Search },
@@ -24,9 +27,17 @@ const navItems = [
   { href: '/agent', label: 'Agent', icon: Bot },
 ];
 
+const bottomNavItems = [
+  { href: '/profile', label: 'Profile', icon: UserIcon },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
+  const { user } = useAuthContext();
+
+  const isActive = (href: string) =>
+    pathname === href || (href !== '/' && pathname.startsWith(href));
 
   return (
     <aside
@@ -53,31 +64,69 @@ export function Sidebar() {
           )}
         </button>
       </div>
-      <nav className="flex-1 space-y-1 p-2" role="navigation">
-        {navItems.map((item) => {
+
+      <nav className="flex-1 space-y-1 overflow-y-auto p-2" role="navigation">
+        {mainNavItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            pathname === item.href ||
-            (item.href !== '/' && pathname.startsWith(item.href));
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
                 'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
+                isActive(item.href)
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                 sidebarCollapsed && 'justify-center',
               )}
-              aria-current={isActive ? 'page' : undefined}
+              aria-current={isActive(item.href) ? 'page' : undefined}
             >
               <Icon className="h-5 w-5 shrink-0" />
               {!sidebarCollapsed && <span>{item.label}</span>}
             </Link>
           );
         })}
+
+        {/* Admin section — only visible to admin users */}
+        {user?.role === 'admin' && !sidebarCollapsed && (
+          <div className="pt-4">
+            <p className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Admin
+            </p>
+            <Link
+              href="/admin"
+              className={cn(
+                'mt-1 flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                isActive('/admin')
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+              )}
+              aria-current={isActive('/admin') ? 'page' : undefined}
+            >
+              <Shield className="h-5 w-5 shrink-0" />
+              <span>Admin Panel</span>
+            </Link>
+          </div>
+        )}
       </nav>
+
+      {/* Bottom: Profile */}
+      <div className="border-t p-2">
+        <Link
+          href="/profile"
+          className={cn(
+            'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+            isActive('/profile')
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+            sidebarCollapsed && 'justify-center',
+          )}
+          aria-current={isActive('/profile') ? 'page' : undefined}
+        >
+          <UserIcon className="h-5 w-5 shrink-0" />
+          {!sidebarCollapsed && <span>Profile</span>}
+        </Link>
+      </div>
     </aside>
   );
 }

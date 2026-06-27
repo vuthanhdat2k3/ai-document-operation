@@ -4,10 +4,60 @@ class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
-    public body?: unknown,
+    public body?: Record<string, unknown> | string,
   ) {
     super(message);
     this.name = 'ApiError';
+  }
+}
+
+const ACCESS_TOKEN_KEY = 'docops_access_token';
+const REFRESH_TOKEN_KEY = 'docops_refresh_token';
+
+function getAccessToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+function buildHeaders(token?: string | null, extra?: HeadersInit): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  };
+}
+
+let isRefreshing = false;
+let refreshPromise: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+
+  try {
+    const response = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!response.ok) {
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      return false;
+    }
+    const data = await response.json();
+    localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
+    localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+    return true;
+  } catch {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    return false;
   }
 }
 
@@ -15,19 +65,38 @@ async function request<T>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
+  const token = getAccessToken();
+  const headers = buildHeaders(token, options.headers);
 
-  const response = await fetch(url, {
+  const url = `${API_BASE}${endpoint}`;
+
+  let response = await fetch(url, {
     ...options,
     headers,
   });
 
+  // Auto-refresh on 401
+  if (response.status === 401 && token) {
+    if (!isRefreshing) {
+      isRefreshing = true;
+      refreshPromise = refreshAccessToken();
+    }
+    const refreshed = await refreshPromise;
+    isRefreshing = false;
+    refreshPromise = null;
+
+    if (refreshed) {
+      const newToken = getAccessToken();
+      const retryHeaders = buildHeaders(newToken, options.headers);
+      response = await fetch(url, {
+        ...options,
+        headers: retryHeaders,
+      });
+    }
+  }
+
   if (!response.ok) {
-    let body: unknown;
+    let body: Record<string, unknown> | string;
     try {
       body = await response.json();
     } catch {
@@ -91,15 +160,25 @@ export const api = {
       });
 
       xhr.addEventListener('error', () => reject(new ApiError(0, 'Upload failed')));
+
       xhr.open('POST', `${API_BASE}${endpoint}`);
+
+      const token = getAccessToken();
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+
       xhr.send(formData);
     });
   },
 
   stream: async function* (endpoint: string, body?: unknown) {
+    const token = getAccessToken();
+    const headers = buildHeaders(token);
+
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: body ? JSON.stringify(body) : undefined,
     });
 
@@ -130,4 +209,3 @@ export const api = {
 };
 
 export { ApiError };
-export type { RequestInit };

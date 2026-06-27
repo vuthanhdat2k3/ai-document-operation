@@ -92,7 +92,7 @@ export function DocumentDetail({ id }: DocumentDetailProps) {
   }
 
   const isUploaded = doc.status === 'uploaded';
-  const isCompleted = doc.status === 'completed' || doc.status === 'extraction_complete';
+  const isCompleted = doc.status === 'completed';
 
   return (
     <div className="space-y-6">
