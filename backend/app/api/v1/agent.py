@@ -252,15 +252,17 @@ class AgentSessionListResponse(BaseModel):
 async def list_agent_sessions(
     limit: int = 50,
     offset: int = 0,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> AgentSessionListResponse:
-    """List recent agent sessions ordered by start time descending."""
+    """List recent agent sessions for the current user."""
     from sqlalchemy import func, select as sa_select
 
     from app.db.models.agent import AgentSession as AgentSessionModel
 
     stmt = (
         sa_select(AgentSessionModel)
+        .where(AgentSessionModel.user_id == user_id)
         .order_by(AgentSessionModel.started_at.desc())
         .offset(offset)
         .limit(limit)
@@ -268,7 +270,11 @@ async def list_agent_sessions(
     result = await db.execute(stmt)
     sessions = result.scalars().all()
 
-    count_stmt = sa_select(func.count()).select_from(AgentSessionModel)
+    count_stmt = (
+        sa_select(func.count())
+        .select_from(AgentSessionModel)
+        .where(AgentSessionModel.user_id == user_id)
+    )
     count_result = await db.execute(count_stmt)
     total = count_result.scalar() or 0
 
@@ -349,17 +355,15 @@ async def run_agent_task(
 @router.get("/sessions/{session_id}", response_model=AgentSessionResponse)
 async def get_agent_session(
     session_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> AgentSessionResponse:
-    """Retrieve an agent session with its execution steps.
-
-    Returns the full session history including input, output, steps,
-    cost, and timing information.
-    """
+    """Retrieve an agent session with its execution steps (must own the session)."""
     service = AgentService()
     session_data = await service.get_session(session_id=session_id, db=db)
-
     if session_data is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    if session_data.get("user_id") != user_id:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
     return AgentSessionResponse(**session_data)
