@@ -21,19 +21,12 @@ import { useChat } from '@/lib/hooks/useChat';
 import { ChatSessionSidebar } from './ChatSessionSidebar';
 import type { ChatMessage } from '@/types';
 
-function TypingIndicator() {
+function TypingDots() {
   return (
-    <div className="message-enter flex justify-start">
-      <div className="flex max-w-[85%] items-center gap-3 rounded-2xl border bg-secondary/80 px-5 py-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
-          <Bot className="h-4 w-4 text-primary" />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="typing-dot inline-block h-2 w-2 rounded-full bg-foreground/40" />
-          <span className="typing-dot inline-block h-2 w-2 rounded-full bg-foreground/40" />
-          <span className="typing-dot inline-block h-2 w-2 rounded-full bg-foreground/40" />
-        </div>
-      </div>
+    <div className="flex items-center gap-1.5">
+      <span className="typing-dot inline-block h-2 w-2 rounded-full bg-foreground/40" />
+      <span className="typing-dot inline-block h-2 w-2 rounded-full bg-foreground/40" />
+      <span className="typing-dot inline-block h-2 w-2 rounded-full bg-foreground/40" />
     </div>
   );
 }
@@ -118,6 +111,7 @@ function CitationBadges({ citations }: { citations: NonNullable<ChatMessage['cit
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
+  const isLoading = !isUser && message.isStreaming;
 
   return (
     <div className={`message-enter flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -139,40 +133,53 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             className={`rounded-2xl px-5 py-3.5 ${
               isUser
                 ? 'bg-chat-user text-chat-user-foreground shadow-sm'
-                : 'border bg-secondary/80 shadow-sm'
+                : isLoading
+                  ? 'border bg-secondary/60 shadow-sm'
+                  : 'border bg-secondary/80 shadow-sm'
             }`}
           >
             {isUser ? (
               <p className="text-[15px] leading-relaxed">{message.content}</p>
+            ) : isLoading ? (
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm text-muted-foreground/60">Đang trả lời</span>
+                <TypingDots />
+              </div>
             ) : (
-              <div className="prose prose-sm dark:prose-invert max-w-none text-[15px] leading-relaxed">
-                <ReactMarkdown>{message.content}</ReactMarkdown>
-              </div>
-            )}
-
-            {message.citations && message.citations.length > 0 && (
-              <CitationBadges citations={message.citations} />
-            )}
-
-            {message.groundedness_score !== undefined && message.groundedness_score > 0 && (
-              <div className="mt-2.5 flex items-center gap-2">
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border/50">
-                  <div
-                    className="h-full rounded-full bg-emerald-500/60 transition-all duration-500"
-                    style={{ width: `${Math.round(message.groundedness_score * 100)}%` }}
-                  />
+              <>
+                <div className="prose prose-sm dark:prose-invert max-w-none text-[15px] leading-relaxed">
+                  <ReactMarkdown>{message.content}</ReactMarkdown>
                 </div>
-                <span className="text-[11px] font-medium text-muted-foreground/60 whitespace-nowrap">
-                  {Math.round(message.groundedness_score * 100)}% grounded
-                </span>
-              </div>
+
+                {message.citations && message.citations.length > 0 && (
+                  <CitationBadges citations={message.citations} />
+                )}
+
+                {message.groundedness_score !== undefined && message.groundedness_score > 0 && (
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border/50">
+                      <div
+                        className="h-full rounded-full bg-emerald-500/60 transition-all duration-500"
+                        style={{ width: `${Math.round(message.groundedness_score * 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-medium text-muted-foreground/60 whitespace-nowrap">
+                      {Math.round(message.groundedness_score * 100)}% grounded
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
           {/* Footer: timestamp + copy */}
           <div className={`mt-1.5 flex items-center gap-2 px-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
-            <MessageTimestamp timestamp={message.timestamp} />
-            {!isUser && message.content && <CopyButton text={message.content} />}
+            {isLoading ? (
+              <span className="text-[11px] font-medium tracking-wide text-muted-foreground/40 uppercase">Đang xử lý...</span>
+            ) : (
+              <MessageTimestamp timestamp={message.timestamp} />
+            )}
+            {!isUser && !isLoading && message.content && <CopyButton text={message.content} />}
           </div>
         </div>
       </div>
@@ -357,7 +364,6 @@ export function ChatInterface() {
               {messages.map((msg) => (
                 <MessageBubble key={msg.id} message={msg} />
               ))}
-              {isStreaming && <TypingIndicator />}
               <div ref={messagesEndRef} />
             </div>
           )}

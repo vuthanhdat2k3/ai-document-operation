@@ -49,15 +49,17 @@ export function useChat() {
 
   const sendMessage = useCallback(
     async (content: string, documentId?: string) => {
+      const msgId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
       const userMessage: ChatMessage = {
-        id: `user-${Date.now()}`,
+        id: `${msgId}-user`,
         role: 'user',
         content,
         timestamp: new Date().toISOString(),
       };
 
       const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
+        id: `${msgId}-assistant`,
         role: 'assistant',
         content: '',
         timestamp: new Date().toISOString(),
@@ -65,17 +67,18 @@ export function useChat() {
         citations: [],
       };
 
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
       setIsStreaming(true);
+      setMessages((prev) => [...prev, userMessage, assistantMessage]);
 
       try {
+        const sid = sessionId;
         const response = await api.post<QAResponse>('/qa/ask', {
           query: content,
           document_id: documentId || undefined,
-          session_id: sessionId || undefined,
+          session_id: sid || undefined,
         });
 
-        if (response.session_id && response.session_id !== sessionId) {
+        if (response.session_id && response.session_id !== sid) {
           setSessionId(response.session_id);
         }
 
@@ -94,7 +97,7 @@ export function useChat() {
         );
 
         queryClient.invalidateQueries({ queryKey: ['chat-sessions'] });
-      } catch (error) {
+      } catch {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMessage.id
@@ -110,7 +113,7 @@ export function useChat() {
         setIsStreaming(false);
       }
     },
-    [messages, sessionId, queryClient]
+    [sessionId, queryClient]
   );
 
   const loadSession = useCallback(async (sessionIdToLoad: string) => {
@@ -118,8 +121,8 @@ export function useChat() {
       const session = await api.get<ChatSessionDetail>(`/chat/sessions/${sessionIdToLoad}`);
       setSessionId(session.id);
       setMessages(
-        session.messages.map((m) => ({
-          id: m.id || `${m.role}-${Date.now()}`,
+        session.messages.map((m, idx) => ({
+          id: m.id || `loaded-${sessionIdToLoad}-${idx}`,
           role: m.role,
           content: m.content,
           citations: m.citations,
