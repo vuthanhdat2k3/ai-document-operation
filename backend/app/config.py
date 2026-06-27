@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     # Database (PostgreSQL)
     DATABASE_URL: str = "postgresql+asyncpg://docops:docops@localhost:5432/docops"
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_SIZE: int = 40
+    DB_MAX_OVERFLOW: int = 20
     DB_ECHO: bool = False
 
     # Redis
