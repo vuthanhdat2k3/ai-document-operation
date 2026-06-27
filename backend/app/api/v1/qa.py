@@ -134,6 +134,7 @@ async def ask_question(
         result = await qa_service.ask(
             document_id=document_id,
             query=body.query,
+            user_id=str(user_id),
             db=db,
             session_id=str(session_uuid),
             conversation_history=history,

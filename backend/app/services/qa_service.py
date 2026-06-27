@@ -86,6 +86,7 @@ class QAService:
         db: AsyncSession,
         session_id: str | None = None,
         conversation_history: list[dict] | None = None,
+        user_id: str | None = None,
     ) -> QAResult:
         """Execute the full Q&A pipeline for a question about a document.
 
@@ -95,6 +96,7 @@ class QAService:
             db: Async database session.
             session_id: Optional session ID for conversation continuity.
             conversation_history: Previous messages for context.
+            user_id: UUID of the requesting user (for per-user isolation).
 
         Returns:
             A ``QAResult`` with the answer, citations, and metadata.
@@ -115,6 +117,23 @@ class QAService:
             analysis.language,
         )
 
+        # ── Router: general chat (no RAG) ──────────────────────────────
+        if analysis.intent == QueryIntent.GENERAL_CHAT:
+            logger.info("General chat detected — skipping RAG pipeline")
+            answer = await self._generator.generate_chat(
+                query, conversation_history=history
+            )
+            return QAResult(
+                answer=answer.text,
+                citations=[],
+                groundedness_score=1.0,
+                session_id=session_id,
+                query_analysis=analysis,
+                confidence=answer.confidence,
+            )
+
+        # ── Full RAG pipeline ───────────────────────────────────────────
+
         # Stage 2: Query rewriting
         retrieval_query = query
         queries_to_search: list[str] = [query]
@@ -133,7 +152,11 @@ class QAService:
         # Stage 3: Hybrid retrieval
         all_results: list[SearchResult] = []
         seen_ids: set[str] = set()
-        filters = {"document_id": document_id} if document_id else None
+        filters: dict = {}
+        if document_id:
+            filters["document_id"] = document_id
+        if user_id:
+            filters["user_id"] = user_id
 
         for q in queries_to_search:
             try:

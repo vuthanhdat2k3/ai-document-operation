@@ -73,6 +73,14 @@ def _estimate_confidence(answer_text: str, citations: list[Citation], total_sour
     return round(max(0.0, min(1.0, base - hedge_penalty)), 3)
 
 
+_CHAT_SYSTEM_PROMPT = (
+    "You are a helpful AI assistant having a conversation with a user. "
+    "Be concise, friendly, and accurate. Answer using your general knowledge. "
+    "If you don't know something, say so honestly. "
+    "Respond in the same language as the user's message."
+)
+
+
 class AnswerGenerator:
     """Generate grounded answers from a compiled context pack.
 
@@ -133,5 +141,55 @@ class AnswerGenerator:
             text=answer_text,
             citations=citations,
             confidence=confidence,
+            thinking=thinking,
+        )
+
+    async def generate_chat(
+        self,
+        query: str,
+        llm_provider: LLMProvider | None = None,
+        conversation_history: list[dict] | None = None,
+    ) -> Answer:
+        """Generate an answer for general conversation (no RAG context).
+
+        Args:
+            query: The user's message.
+            llm_provider: Optional LLM override.
+            conversation_history: Previous messages for context.
+
+        Returns:
+            An ``Answer`` with no citations and high default confidence.
+        """
+        provider = llm_provider or self._llm
+        if provider is None:
+            return Answer(
+                text="No LLM provider configured. Please set LLM_PROVIDER in .env",
+                citations=[],
+                confidence=0.0,
+            )
+
+        try:
+            messages = []
+            for msg in (conversation_history or [])[-10:]:
+                messages.append(Message(role=msg["role"], content=msg["content"]))
+            messages.append(Message(role="user", content=query))
+
+            response = await provider.chat(
+                messages=messages,
+                system=_CHAT_SYSTEM_PROMPT,
+                max_tokens=1024,
+                temperature=0.7,
+            )
+            answer_text = response.content.strip()
+            thinking = response.thinking
+        except Exception:
+            logger.warning("Direct chat generation failed", exc_info=True)
+            answer_text = "Xin lỗi, tôi không thể trả lời ngay lúc này. Vui lòng thử lại."
+            thinking = None
+
+        return Answer(
+            text=answer_text,
+            citations=[],
+            confidence=0.9,
             thinking=thinking,
         )

@@ -51,6 +51,7 @@ class QueryIntent(StrEnum):
     PROCEDURAL = "procedural"
     TEMPORAL = "temporal"
     EXPLORATORY = "exploratory"
+    GENERAL_CHAT = "general_chat"
 
 
 @dataclass
@@ -70,7 +71,20 @@ class QueryAnalysis:
     complexity: str = "simple"
 
 
+_GENERAL_CHAT_PATTERNS = [
+    re.compile(r"\b(?:hello|hi|hey|greetings|chào|xin\s*chào|alo)\b", re.I),
+    re.compile(r"\b(?:thank|thanks|cảm\s*ơn|cám\s*ơn)\b", re.I),
+    re.compile(r"\b(?:how\s+are\s+you|bạn\s*(?:khỏe|thế\s*nào|sao))\b", re.I),
+    re.compile(r"\b(?:what's?\s+up|giúp|help|hỗ\s*trợ)\b", re.I),
+    re.compile(r"\b(?:who\s+(?:are|created|made)\s+you|ai\s*(?:tạo|đã|xây\s*dựng))\b", re.I),
+    re.compile(r"\b(?:what\s+(?:are|can)\s+you\s+do|bạn\s*(?:có\s*thể|làm\s*được)\s*gì)\b", re.I),
+    re.compile(r"\b(?:bye|goodbye|tạm\s*biệt|hẹn\s*gặp)\b", re.I),
+    re.compile(r"\byou\s+(?:are|were)\s+(?:a\s+great|helpful|useful|awesome)\b", re.I),
+    re.compile(r"^chào$|^hello$|^hi$|^hey$|^test$|^testing$", re.I),
+]
+
 _INTENT_KEYWORDS: dict[QueryIntent, list[re.Pattern[str]]] = {
+    QueryIntent.GENERAL_CHAT: _GENERAL_CHAT_PATTERNS,
     QueryIntent.FACTUAL: [
         re.compile(r"\b(?:what\s+is|who\s+is|when\s+is|where\s+is|how\s+much|how\s+many|giá\s*trị|bao\s*nhieu|ai|ở\s*đâu|khi\s*nào)\b", re.I),
         re.compile(r"\b(?:số\s*tiền|ngày\s*tháng|thời\s*hạn|hiệu\s*lực)\b", re.I),
@@ -103,7 +117,15 @@ _INTENT_KEYWORDS: dict[QueryIntent, list[re.Pattern[str]]] = {
 
 
 def _classify_intent(query: str) -> QueryIntent:
-    """Rule-based intent classification using keyword patterns."""
+    """Rule-based intent classification using keyword patterns.
+
+    Returns ``GENERAL_CHAT`` for greetings, thanks, small talk, etc.
+    Falls back to document-related intents for queries about documents.
+    """
+    # Fast-path: pure conversational queries
+    if _GENERAL_CHAT_PATTERNS[0].search(query) or _GENERAL_CHAT_PATTERNS[-1].search(query):
+        return QueryIntent.GENERAL_CHAT
+
     scores: dict[QueryIntent, int] = {}
     for intent, patterns in _INTENT_KEYWORDS.items():
         count = sum(1 for p in patterns if p.search(query))
@@ -111,7 +133,9 @@ def _classify_intent(query: str) -> QueryIntent:
             scores[intent] = count
 
     if not scores:
-        if "?" in query:
+        if "?" in query and not any(
+            p.search(query) for p in _GENERAL_CHAT_PATTERNS
+        ):
             return QueryIntent.FACTUAL
         return QueryIntent.EXPLORATORY
 
