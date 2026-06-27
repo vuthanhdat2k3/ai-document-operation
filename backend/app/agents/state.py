@@ -23,7 +23,7 @@ class ToolResult(TypedDict):
 class StepRecord(TypedDict):
     """Record of a single agent step for observability."""
 
-    step_type: Literal["retrieve", "reason", "tool_call", "synthesize"]
+    step_type: Literal["retrieve", "reason", "tool_call", "synthesize", "plan", "reflect"]
     iteration: int
     input_summary: str
     output_summary: str

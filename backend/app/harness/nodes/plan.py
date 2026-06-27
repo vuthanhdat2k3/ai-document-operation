@@ -1,7 +1,11 @@
-"""Reason node factory — LLM decides whether to call a tool or synthesize.
+"""Plan node — LLM generates a structured step-by-step plan before execution.
 
-Parameterized by the ``AgentSpec`` so each agent gets its own system prompt
-and tool list.
+The plan node is invoked when the ``AgentSpec`` has a ``planner_prompt``
+configured.  It asks the LLM to decompose the user query into a sequence of
+tool calls or reasoning steps, then stores the plan in the agent state.
+
+After planning, the agent executes each step sequentially via the reason →
+tool_call → synthesize loop.
 """
 
 from __future__ import annotations
@@ -16,59 +20,55 @@ from app.harness.agent_spec import AgentSpec
 logger = logging.getLogger(__name__)
 
 
-def make_reason_node(spec: AgentSpec) -> Any:
-    """Create a reason node for the given agent spec.
-
-    The node calls the LLM with the agent's system prompt (including
-    available tools) and decides whether to invoke a tool or synthesise.
+def make_plan_node(spec: AgentSpec) -> Any:
+    """Create a plan node for the given agent spec.
 
     Args:
-        spec: AgentSpec containing system prompt and tool list.
+        spec: AgentSpec with optional ``planner_prompt``.
 
     Returns:
-        An async callable ``(state) -> partial_state_update``.
+        An async callable ``(state) -> partial_state_update``, or ``None``
+        if the spec has no planner_prompt configured.
     """
-    system_prompt = spec.system_prompt
+    planner_prompt = spec.planner_prompt
+    if not planner_prompt:
+        return None
 
-    async def reason_node(state: dict[str, Any]) -> dict[str, Any]:
+    async def plan_node(state: dict[str, Any]) -> dict[str, Any]:
         start = time.monotonic()
-        iteration = state.get("iteration", 0)
         messages = state.get("messages", [])
 
-        # Build tools description
-        tools_desc = _build_tools_description(spec)
-        filled_prompt = system_prompt.format(tools=tools_desc)
-
-        # Build context from state
-        context = _build_context_summary(state)
+        # Find the user query
         user_query = ""
         for msg in reversed(messages):
             if isinstance(msg, dict) and msg.get("role") == "user":
                 user_query = msg.get("content", "")
                 break
 
-        user_message = f"Query: {user_query}\n\n{context}"
+        # Build tools description for the planner
+        tools_desc = _build_tools_description(spec)
+        filled_prompt = planner_prompt.format(tools=tools_desc)
+        user_message = f"User query: {user_query}"
 
         llm_result = await _call_llm(filled_prompt, user_message, spec)
         elapsed_ms = int((time.monotonic() - start) * 1000)
 
-        action = llm_result.get("action", "synthesize")
-        pending_tool = None
+        plan = llm_result.get("plan", [])
+        if not isinstance(plan, list):
+            logger.warning("plan_node: LLM did not return a valid plan")
+            plan = []
 
-        if action == "tool_call" and llm_result.get("tool_name"):
-            pending_tool = {
-                "name": llm_result["tool_name"],
-                "arguments": llm_result.get("arguments", {}),
-            }
-            logger.info(
-                "reason_node(%s): decided to call tool=%s iteration=%d",
-                spec.name,
-                llm_result["tool_name"],
-                iteration,
+        # Log plan
+        if plan:
+            steps_desc = "; ".join(
+                f"step {s.get('step', i+1)}: {s.get('tool', 'reason')}"
+                for i, s in enumerate(plan)
             )
+            logger.info("plan_node(%s): created plan — %s", spec.name, steps_desc)
         else:
-            logger.info("reason_node(%s): decided to synthesize iteration=%d", spec.name, iteration)
+            logger.info("plan_node(%s): empty plan — proceeding directly", spec.name)
 
+        # Track plan cost
         cost_update: dict[str, Any] = {}
         prompt_tokens = llm_result.get("prompt_tokens", 0)
         completion_tokens = llm_result.get("completion_tokens", 0)
@@ -89,11 +89,11 @@ def make_reason_node(spec: AgentSpec) -> Any:
         steps = list(state.get("steps", []))
         steps.append(
             StepRecord(
-                step_type="reason",
-                iteration=iteration,
+                step_type="plan",
+                iteration=0,
                 input_summary=f"query={user_query[:100]}",
-                output_summary=f"action={action}"
-                + (f" tool={llm_result.get('tool_name', '')}" if action == "tool_call" else ""),
+                output_summary=f"plan_steps={len(plan)}"
+                + (f" [{steps_desc[:100]}]" if plan else ""),
                 duration_ms=elapsed_ms,
                 tokens_used=prompt_tokens + completion_tokens,
             )
@@ -102,20 +102,20 @@ def make_reason_node(spec: AgentSpec) -> Any:
         metadata = {**state.get("metadata", {}), **cost_update}
 
         return {
-            "current_step": "reason",
-            "pending_tool": pending_tool,
+            "current_step": "plan",
+            "plan": plan,
+            "plan_index": 0,
             "metadata": metadata,
             "steps": steps,
         }
 
-    return reason_node
+    return plan_node
 
 
 def _build_tools_description(spec: AgentSpec) -> str:
-    """Build a description of available tools for the LLM prompt."""
+    """Build a description of available tools for the LLM."""
     if not spec.tools:
         return "(no tools available)"
-
     try:
         from app.agents.tools.registry import get_registry
 
@@ -144,40 +144,8 @@ def _build_tools_description(spec: AgentSpec) -> str:
         return "(tool listing failed)"
 
 
-def _build_context_summary(state: dict[str, Any]) -> str:
-    """Build a summary of retrieved documents and past tool results."""
-    parts = []
-
-    # Check both context.documents and legacy documents field
-    context = state.get("context", {})
-    docs = context.get("documents", []) or state.get("documents", [])
-    if docs:
-        parts.append("Retrieved context:")
-        for i, doc in enumerate(docs[:5], 1):
-            text = doc.get("text", "")[:300]
-            score = doc.get("score", 0)
-            parts.append(f"  [{i}] (score={score:.3f}) {text}")
-        if len(docs) > 5:
-            parts.append(f"  ... and {len(docs) - 5} more chunks")
-
-    tool_results = state.get("tool_results", [])
-    if tool_results:
-        parts.append("\nPrevious tool results:")
-        for tr in tool_results:
-            parts.append(f"  - {tr['tool_name']}({tr['arguments']}): {str(tr['output'])[:200]}")
-
-    return "\n".join(parts) if parts else "(no context available)"
-
-
 async def _call_llm(system_prompt: str, user_message: str, spec: AgentSpec) -> dict[str, Any]:
-    """Call the LLM via the provider abstraction and parse the JSON response.
-
-    Uses ``get_llm_provider()`` so the agent can work with OpenAI, Anthropic,
-    Xiaomi, or local models — whatever ``LLM_PROVIDER`` is configured to.
-
-    Falls back to synthesize if the LLM is unavailable or returns
-    unparseable output.
-    """
+    """Call the LLM and parse the JSON response."""
     try:
         from app.llm.base import Message
         from app.llm.factory import get_llm_provider
@@ -190,24 +158,20 @@ async def _call_llm(system_prompt: str, user_message: str, spec: AgentSpec) -> d
         response = await provider.chat(
             messages=messages,
             model=spec.model.model_name,
-            max_tokens=1024,
+            max_tokens=2048,
             temperature=0.0,
         )
-
         content = response.content or "{}"
         parsed = json.loads(content)
 
         return {
-            "action": parsed.get("action", "synthesize"),
-            "tool_name": parsed.get("tool_name"),
-            "arguments": parsed.get("arguments", {}),
-            "reasoning": parsed.get("reasoning", ""),
+            "plan": parsed.get("plan", []),
             "prompt_tokens": response.input_tokens or 0,
             "completion_tokens": response.output_tokens or 0,
         }
     except json.JSONDecodeError:
-        logger.warning("reason_node: failed to parse LLM JSON response, defaulting to synthesize")
-        return {"action": "synthesize", "reasoning": "LLM response parse error"}
+        logger.warning("plan_node: failed to parse LLM JSON response, using empty plan")
+        return {"plan": []}
     except Exception as e:
-        logger.error("reason_node LLM call failed: %s", e)
-        return {"action": "synthesize", "reasoning": f"LLM error: {e}"}
+        logger.error("plan_node LLM call failed: %s", e)
+        return {"plan": []}

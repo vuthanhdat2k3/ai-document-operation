@@ -12,6 +12,54 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class MemoryConfig(BaseModel):
+    """Conversation memory configuration.
+
+    Attributes:
+        window_size: Number of recent messages to keep in context.
+        enable_summarization: If True, summarize older messages beyond window_size.
+        max_history_tokens: Max tokens for the full conversation history.
+    """
+
+    window_size: int = Field(
+        default=10,
+        ge=1,
+        description="Number of recent messages to keep in context",
+    )
+    enable_summarization: bool = Field(
+        default=False,
+        description="Summarize older messages beyond window_size",
+    )
+    max_history_tokens: int = Field(
+        default=4096,
+        ge=256,
+        description="Max tokens for conversation history",
+    )
+
+
+class AgentHooks(BaseModel):
+    """Before/after execution hooks configuration.
+
+    Attributes:
+        before_execution: Optional prompt or action to run before agent execution.
+        after_execution: Optional prompt or action to run after agent execution.
+        on_error: Optional prompt or action to run on agent error.
+    """
+
+    before_execution: str | None = Field(
+        default=None,
+        description="Prompt or action to run before agent execution",
+    )
+    after_execution: str | None = Field(
+        default=None,
+        description="Prompt or action to run after agent execution",
+    )
+    on_error: str | None = Field(
+        default=None,
+        description="Prompt or action to run on agent error",
+    )
+
+
 class ModelConfig(BaseModel):
     """LLM model configuration for an agent.
 
@@ -183,6 +231,18 @@ class AgentSpec(BaseModel):
         default_factory=dict,
         description="Arbitrary metadata (owner, cost centre, tags, …)",
     )
+    planner_prompt: str | None = Field(
+        default=None,
+        description="Custom prompt for the Plan node. If None, planning is skipped.",
+    )
+    memory_config: MemoryConfig = Field(
+        default_factory=MemoryConfig,
+        description="Conversation memory settings",
+    )
+    hooks: AgentHooks = Field(
+        default_factory=AgentHooks,
+        description="Before/after execution hooks",
+    )
 
     def model_post_init(self, __context: Any) -> None:
         """Validate that tool names exist (soft check — warns only)."""
@@ -245,6 +305,15 @@ class AgentSpec(BaseModel):
                 "- Keep tool arguments minimal and focused.\n"
             ),
             tools=["search_documents", "get_document_info"],
+            planner_prompt=(
+                "Analyse the user's query and create a step-by-step plan. "
+                "Each step should use one of the available tools.\n\n"
+                "Respond with a JSON object:\n"
+                '{"plan": [{"step": 1, "tool": "<tool_name>", "args": {...}, "reason": "..."}, ...]}\n\n'
+                "Rules:\n"
+                "- Break complex queries into multiple tool steps.\n"
+                "- If the answer can be given directly, return an empty plan.\n"
+            ),
             guardrails=GuardrailConfig(
                 max_iterations=10,
                 max_cost_usd=5.0,

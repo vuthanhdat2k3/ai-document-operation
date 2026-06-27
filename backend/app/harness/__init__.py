@@ -6,6 +6,13 @@ from app.harness.agent_graph import build_agent_graph
 from app.harness.cancel_token import CancelToken, cancel_session, register_cancel_token
 from app.harness.event_manager import EventManager, get_event_manager
 from app.harness.hil_service import HILService, get_hil_service
+from app.harness.plugin_loader import load_plugins as discover_and_load_plugins
+from app.harness.rate_limiter import (
+    RateLimitConfig,
+    RateLimitExceededError,
+    RateLimiter,
+    get_rate_limiter,
+)
 
 __all__ = [
     "AgentSpec",
@@ -22,4 +29,9 @@ __all__ = [
     "get_event_manager",
     "HILService",
     "get_hil_service",
+    "RateLimiter",
+    "get_rate_limiter",
+    "RateLimitConfig",
+    "RateLimitExceededError",
+    "discover_and_load_plugins",
 ]

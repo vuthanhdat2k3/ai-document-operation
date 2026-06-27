@@ -94,24 +94,40 @@ def _build_document_graph(spec: AgentSpec) -> Any:
 
 
 def _build_langgraph_simple(spec: AgentSpec) -> Any:
-    """LangGraph: single synthesize node."""
+    """LangGraph: single synthesize node, optional plan node at start."""
     from langgraph.graph import END, START, StateGraph
 
     from app.agents.state import AgentState as State
+    from app.harness.nodes.plan import make_plan_node
 
     graph = StateGraph(State)
+
+    plan_node_fn = make_plan_node(spec)
+    if plan_node_fn:
+        graph.add_node("plan", plan_node_fn)
     graph.add_node("synthesize", _make_synthesize_node(spec))
-    graph.add_edge(START, "synthesize")
+
+    if plan_node_fn:
+        graph.add_edge(START, "plan")
+        graph.add_edge("plan", "synthesize")
+    else:
+        graph.add_edge(START, "synthesize")
     graph.add_edge("synthesize", END)
     return graph.compile()
 
 
 def _build_langgraph_react(spec: AgentSpec) -> Any:
-    """LangGraph: ReAct loop with reason, tool_call, synthesize."""
+    """LangGraph: ReAct loop with reason, tool_call, synthesize.
+
+    If the spec has a ``planner_prompt``, a plan node is added at the start.
+    A reflect node provides self-healing after tool call errors.
+    """
     from langgraph.graph import END, START, StateGraph
 
     from app.agents.state import AgentState as State
+    from app.harness.nodes.plan import make_plan_node
     from app.harness.nodes.reason import make_reason_node
+    from app.harness.nodes.reflect import make_reflect_node
     from app.harness.nodes.synthesize import make_synthesize_node
     from app.harness.nodes.tool_call import make_tool_call_node
 
@@ -125,34 +141,72 @@ def _build_langgraph_react(spec: AgentSpec) -> Any:
             return "tool_call"
         return "synthesize"
 
+    def _route_after_tool_call(state: dict) -> str:
+        if state.get("tool_error"):
+            return "reflect"
+        pending = state.get("pending_tool")
+        if pending and pending.get("name"):
+            return "reason"
+        return "reason"
+
+    def _route_after_reflect(state: dict) -> str:
+        step = state.get("current_step", "")
+        if step == "tool_call":
+            return "tool_call"
+        return "synthesize"
+
     graph = StateGraph(State)
+
+    plan_node_fn = make_plan_node(spec)
+    reflect_node_fn = make_reflect_node(spec)
+
+    if plan_node_fn:
+        graph.add_node("plan", plan_node_fn)
     graph.add_node("reason", make_reason_node(spec))
     graph.add_node("tool_call", make_tool_call_node())
+    graph.add_node("reflect", reflect_node_fn)
     graph.add_node("synthesize", make_synthesize_node(spec))
 
-    graph.add_edge(START, "reason")
+    if plan_node_fn:
+        graph.add_edge(START, "plan")
+        graph.add_edge("plan", "reason")
+    else:
+        graph.add_edge(START, "reason")
+
     graph.add_conditional_edges(
         "reason",
         _should_call_tool,
         {"tool_call": "tool_call", "synthesize": "synthesize"},
     )
-    graph.add_edge("tool_call", "reason")
+    graph.add_conditional_edges(
+        "tool_call",
+        _route_after_tool_call,
+        {"reflect": "reflect", "reason": "reason"},
+    )
+    graph.add_conditional_edges(
+        "reflect",
+        _route_after_reflect,
+        {"tool_call": "tool_call", "synthesize": "synthesize"},
+    )
     graph.add_edge("synthesize", END)
 
     return graph.compile()
 
 
 def _build_langgraph_document(spec: AgentSpec) -> Any:
-    """LangGraph: retrieve → (reason ↔ tool_call) → synthesize.
+    """LangGraph: plan → retrieve → (reason ↔ tool_call → reflect) → synthesize.
 
-    This preserves the current ``doc-qa`` graph topology exactly.
+    If the spec has a ``planner_prompt``, a plan node is added at the start.
+    A reflect node provides self-healing after tool call errors.
     """
     from langgraph.graph import END, START, StateGraph
 
     from app.agents.nodes.retrieve import retrieve_node
     from app.agents.nodes.synthesize import synthesize_node as doc_synthesize_node
     from app.agents.state import AgentState as State
+    from app.harness.nodes.plan import make_plan_node
     from app.harness.nodes.reason import make_reason_node
+    from app.harness.nodes.reflect import make_reflect_node
     from app.harness.nodes.tool_call import make_tool_call_node
 
     def _should_call_tool(state: dict) -> str:
@@ -165,20 +219,55 @@ def _build_langgraph_document(spec: AgentSpec) -> Any:
             return "tool_call"
         return "synthesize"
 
+    def _route_after_tool_call(state: dict) -> str:
+        if state.get("tool_error"):
+            return "reflect"
+        pending = state.get("pending_tool")
+        if pending and pending.get("name"):
+            return "reason"
+        return "reason"
+
+    def _route_after_reflect(state: dict) -> str:
+        step = state.get("current_step", "")
+        if step == "tool_call":
+            return "tool_call"
+        return "synthesize"
+
     graph = StateGraph(State)
+
+    plan_node_fn = make_plan_node(spec)
+    reflect_node_fn = make_reflect_node(spec)
+
     graph.add_node("retrieve", retrieve_node)
+    if plan_node_fn:
+        graph.add_node("plan", plan_node_fn)
     graph.add_node("reason", make_reason_node(spec))
     graph.add_node("tool_call", make_tool_call_node())
+    graph.add_node("reflect", reflect_node_fn)
     graph.add_node("synthesize", doc_synthesize_node)
 
-    graph.add_edge(START, "retrieve")
+    if plan_node_fn:
+        graph.add_edge(START, "plan")
+        graph.add_edge("plan", "retrieve")
+    else:
+        graph.add_edge(START, "retrieve")
+
     graph.add_edge("retrieve", "reason")
     graph.add_conditional_edges(
         "reason",
         _should_call_tool,
         {"tool_call": "tool_call", "synthesize": "synthesize"},
     )
-    graph.add_edge("tool_call", "reason")
+    graph.add_conditional_edges(
+        "tool_call",
+        _route_after_tool_call,
+        {"reflect": "reflect", "reason": "reason"},
+    )
+    graph.add_conditional_edges(
+        "reflect",
+        _route_after_reflect,
+        {"tool_call": "tool_call", "synthesize": "synthesize"},
+    )
     graph.add_edge("synthesize", END)
 
     return graph.compile()
@@ -345,7 +434,10 @@ class _FallbackSimpleGraph:
     """Simple prompt → answer loop (no LangGraph)."""
 
     def __init__(self, spec: AgentSpec) -> None:
+        from app.harness.nodes.plan import make_plan_node
+
         self._spec = spec
+        self._plan = make_plan_node(spec)
         self._synthesize = _make_synthesize_node(spec)
 
     def invoke(self, state: dict) -> dict:
@@ -356,27 +448,35 @@ class _FallbackSimpleGraph:
         session_id = state.get("metadata", {}).get("session_id") or state.get("session_id", "")
         current = dict(state)
 
+        # Optional plan node
+        if self._plan:
+            plan_update = await _with_cancel_check(self._plan(current), current)
+            current = {**current, **plan_update}
+            await _emit_step_event(session_id, current, "plan")
+
         result = await _with_cancel_check(self._synthesize(current), current)
         current = {**current, **result}
         await _emit_step_event(session_id, current, "synthesize")
-
-        # HIL: before_synthesize gate
         await _check_hil_gates(self._spec, current, session_id)
 
         return current
 
 
 class _FallbackReActGraph:
-    """Simple ReAct loop (no LangGraph)."""
+    """Simple ReAct loop (no LangGraph) with optional plan and reflect."""
 
     def __init__(self, spec: AgentSpec) -> None:
+        from app.harness.nodes.plan import make_plan_node
         from app.harness.nodes.reason import make_reason_node
+        from app.harness.nodes.reflect import make_reflect_node
         from app.harness.nodes.synthesize import make_synthesize_node
         from app.harness.nodes.tool_call import make_tool_call_node
 
         self._spec = spec
+        self._plan = make_plan_node(spec)
         self._reason = make_reason_node(spec)
         self._tool_call = make_tool_call_node()
+        self._reflect = make_reflect_node(spec)
         self._synthesize = make_synthesize_node(spec)
 
     def invoke(self, state: dict) -> dict:
@@ -387,6 +487,12 @@ class _FallbackReActGraph:
         session_id = state.get("metadata", {}).get("session_id") or state.get("session_id", "")
         current = dict(state)
         max_iter = self._spec.guardrails.max_iterations
+
+        # Optional plan node
+        if self._plan:
+            plan_update = await _with_cancel_check(self._plan(current), current)
+            current = {**current, **plan_update}
+            await _emit_step_event(session_id, current, "plan")
 
         while True:
             await _check_hil_gates(self._spec, current, session_id)
@@ -405,6 +511,19 @@ class _FallbackReActGraph:
             current = {**current, **tool_update}
             await _emit_step_event(session_id, current, "tool_call")
 
+            # Reflection: if tool call had an error, try to recover
+            if current.get("tool_error"):
+                reflect_update = await _with_cancel_check(self._reflect(current), current)
+                current = {**current, **reflect_update}
+                await _emit_step_event(session_id, current, "reflect")
+
+                # If reflect says retry, loop back to reason (which will re-evaluate)
+                if current.get("current_step") == "tool_call" and current.get("pending_tool"):
+                    continue
+
+                # Otherwise the reflect node set current_step="synthesize" — break
+                break
+
         synth_update = await _with_cancel_check(self._synthesize(current), current)
         current = {**current, **synth_update}
         await _emit_step_event(session_id, current, "synthesize")
@@ -414,18 +533,22 @@ class _FallbackReActGraph:
 
 
 class _FallbackDocumentGraph:
-    """Document-aware loop with retrieval (no LangGraph)."""
+    """Document-aware loop with retrieval (no LangGraph), plan, and reflect."""
 
     def __init__(self, spec: AgentSpec) -> None:
         from app.agents.nodes.retrieve import retrieve_node
+        from app.harness.nodes.plan import make_plan_node
         from app.harness.nodes.reason import make_reason_node
+        from app.harness.nodes.reflect import make_reflect_node
         from app.harness.nodes.synthesize import make_synthesize_node
         from app.harness.nodes.tool_call import make_tool_call_node
 
         self._spec = spec
+        self._plan = make_plan_node(spec)
         self._retrieve = retrieve_node
         self._reason = make_reason_node(spec)
         self._tool_call = make_tool_call_node()
+        self._reflect = make_reflect_node(spec)
         self._synthesize = make_synthesize_node(spec)
 
     def invoke(self, state: dict) -> dict:
@@ -436,6 +559,12 @@ class _FallbackDocumentGraph:
         session_id = state.get("metadata", {}).get("session_id") or state.get("session_id", "")
         current = dict(state)
         max_iter = self._spec.guardrails.max_iterations
+
+        # Optional plan node
+        if self._plan:
+            plan_update = await _with_cancel_check(self._plan(current), current)
+            current = {**current, **plan_update}
+            await _emit_step_event(session_id, current, "plan")
 
         retrieve_update = await _with_cancel_check(self._retrieve(current), current)
         current = {**current, **retrieve_update}
@@ -457,6 +586,17 @@ class _FallbackDocumentGraph:
             tool_update = await _with_cancel_check(self._tool_call(current), current)
             current = {**current, **tool_update}
             await _emit_step_event(session_id, current, "tool_call")
+
+            # Reflection: if tool call had an error, try to recover
+            if current.get("tool_error"):
+                reflect_update = await _with_cancel_check(self._reflect(current), current)
+                current = {**current, **reflect_update}
+                await _emit_step_event(session_id, current, "reflect")
+
+                if current.get("current_step") == "tool_call" and current.get("pending_tool"):
+                    continue
+
+                break
 
         synth_update = await _with_cancel_check(self._synthesize(current), current)
         current = {**current, **synth_update}

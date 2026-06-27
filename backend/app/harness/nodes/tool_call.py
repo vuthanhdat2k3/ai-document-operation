@@ -91,6 +91,7 @@ def make_tool_call_node() -> Any:
             "current_step": "tool_call",
             "pending_tool": None,
             "steps": steps,
+            "tool_error": error or "",
         }
 
     return tool_call_node
