@@ -72,9 +72,10 @@ def _call_llm_synthesize(system_prompt: str, user_message: str) -> dict[str, Any
                 "completion_tokens": 0,
             }
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        base_url = getattr(settings, "OPENAI_API_BASE", None) or "https://api.openai.com/v1"
+        client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=base_url)
         response = client.chat.completions.create(
-            model=settings.DEFAULT_MODEL,
+            model=settings.LLM_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},

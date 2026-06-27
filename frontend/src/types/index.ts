@@ -63,11 +63,20 @@ export interface Citation {
   score: number;
 }
 
+export interface DebugStep {
+  step_type: string;
+  iteration: number;
+  input_summary: string;
+  output_summary: string;
+  duration_ms: number;
+}
+
 export interface QAResponse {
   answer: string;
   citations: Citation[];
   groundedness_score: number;
   session_id: string;
+  debug_steps?: DebugStep[];
 }
 
 export interface ChatMessage {
@@ -76,6 +85,7 @@ export interface ChatMessage {
   content: string;
   citations?: Citation[];
   groundedness_score?: number;
+  debug_steps?: DebugStep[];
   timestamp: string;
   created_at?: string;
   isStreaming?: boolean;

@@ -72,7 +72,7 @@ export function useChat() {
 
       try {
         const sid = sessionId;
-        const response = await api.post<QAResponse>('/qa/ask', {
+        const response = await api.post<QAResponse>('/chat/messages', {
           query: content,
           document_id: documentId || undefined,
           session_id: sid || undefined,
@@ -90,6 +90,7 @@ export function useChat() {
                   content: response.answer,
                   citations: response.citations || [],
                   groundedness_score: response.groundedness_score,
+                  debug_steps: response.debug_steps,
                   isStreaming: false,
                 }
               : m

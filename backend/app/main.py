@@ -44,6 +44,54 @@ async def _init_vector_store() -> None:
     logger.info("Qdrant vector store connection verified")
 
 
+def _load_builtin_tools() -> None:
+    try:
+        from app.agents.tools.rag_tool import register_rag_tool
+        from app.agents.tools.registry import get_registry
+
+        register_rag_tool(get_registry())
+        logger.info("Built-in tool stubs registered")
+    except Exception:
+        logger.exception("Failed to load built-in tool stubs")
+
+
+def _bind_rag_tool() -> None:
+    try:
+        from qdrant_client import QdrantClient
+
+        from app.agents.tools.rag_tool import create_rag_tool
+        from app.agents.tools.registry import get_registry
+        from app.config import get_settings
+        from app.llm.factory import get_llm_provider
+        from app.rag.embedder import EmbeddingPipeline
+        from app.rag.reranker import Reranker
+        from app.rag.retriever import HybridRetriever
+
+        settings = get_settings()
+        qdrant = QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
+        embedder = EmbeddingPipeline()
+        retriever = HybridRetriever(qdrant_client=qdrant, embedder=embedder)
+        reranker = Reranker()
+
+        llm = None
+        try:
+            llm = get_llm_provider(settings)
+        except Exception:
+            logger.warning("LLM provider not available for RAG tool")
+
+        bound = create_rag_tool(retriever=retriever, reranker=reranker, llm_provider=llm)
+
+        registry = get_registry()
+        if registry.has("rag_query"):
+            registry._tools["rag_query"].function = bound
+            logger.info("RAG tool bound with live pipeline components")
+        else:
+            logger.warning("rag_query tool not found in registry")
+
+    except Exception:
+        logger.exception("Failed to bind RAG tool, stub will remain in place")
+
+
 async def _warm_up_models() -> None:
     """Warm up ML models (placeholder for model pre-loading)."""
     logger.info("Model warm-up complete (no models to load yet)")
@@ -92,10 +140,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await _init_db()
     await _seed_defaults()
     _load_builtin_agents()
+    _load_builtin_tools()
     try:
         await _init_vector_store()
     except Exception:
         logger.warning("Qdrant not available, continuing without vector store")
+    _bind_rag_tool()
     await _warm_up_models()
     logger.info("Application startup complete")
 

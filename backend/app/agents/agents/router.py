@@ -7,6 +7,7 @@ returns the specialist's answer.
 
 from __future__ import annotations
 
+from app.config import get_settings
 from app.harness.agent_spec import AgentSpec, GuardrailConfig, ModelConfig
 
 AGENT = AgentSpec(
@@ -39,7 +40,7 @@ AGENT = AgentSpec(
     tools=["delegate_to_agent"],
     model=ModelConfig(
         provider="openai",
-        model_name="gpt-4o",
+        model_name=get_settings().LLM_MODEL,
         temperature=0.0,
         max_tokens=2048,
     ),

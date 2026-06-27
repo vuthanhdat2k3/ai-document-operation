@@ -13,13 +13,14 @@ import {
   Copy,
   Check,
   Trash2,
+  Bug,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useChat } from '@/lib/hooks/useChat';
 import { ChatSessionSidebar } from './ChatSessionSidebar';
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, DebugStep } from '@/types';
 
 function TypingDots() {
   return (
@@ -109,6 +110,54 @@ function CitationBadges({ citations }: { citations: NonNullable<ChatMessage['cit
   );
 }
 
+function DebugStepsPanel({ steps }: { steps: DebugStep[] }) {
+  const [open, setOpen] = useState(false);
+
+  if (!steps || steps.length === 0) return null;
+
+  return (
+    <div className="mt-3 border-t border-border/50 pt-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+      >
+        <Bug className="h-3 w-3" />
+        Agent Steps ({steps.length})
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1">
+          {steps.map((step, i) => (
+            <div
+              key={i}
+              className="rounded-lg border border-border/30 bg-background/50 px-3 py-2 text-[11px] leading-relaxed"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-foreground/80 uppercase tracking-wide">
+                  {step.step_type}
+                </span>
+                <span className="text-muted-foreground/40 shrink-0">
+                  #{step.iteration} · {step.duration_ms}ms
+                </span>
+              </div>
+              {step.input_summary && (
+                <div className="mt-0.5 text-muted-foreground/60">
+                  <span className="font-medium text-muted-foreground/50">→</span> {step.input_summary}
+                </div>
+              )}
+              {step.output_summary && (
+                <div className="text-muted-foreground/60 truncate" title={step.output_summary}>
+                  <span className="font-medium text-muted-foreground/50">←</span> {step.output_summary}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
   const isLoading = !isUser && message.isStreaming;
@@ -167,6 +216,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                       {Math.round(message.groundedness_score * 100)}% grounded
                     </span>
                   </div>
+                )}
+
+                {message.debug_steps && message.debug_steps.length > 0 && (
+                  <DebugStepsPanel steps={message.debug_steps} />
                 )}
               </>
             )}

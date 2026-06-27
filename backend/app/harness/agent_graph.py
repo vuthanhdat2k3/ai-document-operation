@@ -246,9 +246,19 @@ def _build_langgraph_document(spec: AgentSpec) -> Any:
     graph.add_node("reflect", reflect_node_fn)
     graph.add_node("synthesize", doc_synthesize_node)
 
+    def _route_after_plan(state: dict) -> str:
+        plan = state.get("plan", [])
+        if plan and len(plan) > 0:
+            return "retrieve"
+        return "reason"
+
     if plan_node_fn:
         graph.add_edge(START, "plan")
-        graph.add_edge("plan", "retrieve")
+        graph.add_conditional_edges(
+            "plan",
+            _route_after_plan,
+            {"retrieve": "retrieve", "reason": "reason"},
+        )
     else:
         graph.add_edge(START, "retrieve")
 
@@ -566,9 +576,13 @@ class _FallbackDocumentGraph:
             current = {**current, **plan_update}
             await _emit_step_event(session_id, current, "plan")
 
-        retrieve_update = await _with_cancel_check(self._retrieve(current), current)
-        current = {**current, **retrieve_update}
-        await _emit_step_event(session_id, current, "retrieve")
+        plan = current.get("plan", [])
+        if plan:
+            retrieve_update = await _with_cancel_check(self._retrieve(current), current)
+            current = {**current, **retrieve_update}
+            await _emit_step_event(session_id, current, "retrieve")
+        else:
+            logger.info("_FallbackDocumentGraph: empty plan — skipping retrieval")
 
         while True:
             await _check_hil_gates(self._spec, current, session_id)

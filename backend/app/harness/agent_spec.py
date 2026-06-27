@@ -281,8 +281,12 @@ class AgentSpec(BaseModel):
     @classmethod
     def doc_qa(cls) -> AgentSpec:
         """Built-in document Q&A agent template."""
+        from app.config import get_settings
+
+        _settings = get_settings()
         return cls(
             name="doc-qa",
+            model=ModelConfig(model_name=_settings.LLM_MODEL),
             description=(
                 "Answer questions over the document corpus using hybrid "
                 "retrieval (dense + sparse).  Supports contract analysis, "
@@ -291,7 +295,8 @@ class AgentSpec(BaseModel):
             version="1.0.0",
             system_prompt=(
                 "You are a document operations agent. "
-                "Given the user query and retrieved context, decide the next action.\n\n"
+                "Given the user query, decide whether you need information "
+                "from uploaded documents or can answer directly.\n\n"
                 "Available tools:\n{tools}\n\n"
                 "You must respond with a JSON object in one of two formats:\n\n"
                 "1. To call a tool:\n"
@@ -300,19 +305,25 @@ class AgentSpec(BaseModel):
                 '  {{"action": "synthesize", "reasoning": "<why no more tools are needed>"}}\n\n'
                 "Rules:\n"
                 "- Only use tools that are listed above.\n"
-                "- If you have enough information to answer, choose 'synthesize'.\n"
+                "- If the user asks a general question (not about documents), "
+                "choose 'synthesize' and answer using your own knowledge.\n"
+                "- If the question requires document content — contracts, "
+                "invoices, policies, reports, deadlines, clauses — call "
+                "the 'rag_query' tool to search and analyse the document corpus.\n"
                 "- Do not call the same tool with the same arguments more than once.\n"
                 "- Keep tool arguments minimal and focused.\n"
             ),
-            tools=["search_documents", "get_document_info"],
+            tools=["rag_query", "get_document_info"],
             planner_prompt=(
                 "Analyse the user's query and create a step-by-step plan. "
                 "Each step should use one of the available tools.\n\n"
+                "Available tools:\n{tools}\n\n"
                 "Respond with a JSON object:\n"
-                '{"plan": [{"step": 1, "tool": "<tool_name>", "args": {...}, "reason": "..."}, ...]}\n\n'
+                '{{"plan": [{{"step": 1, "tool": "<tool_name>", "args": {{...}}, "reason": "..."}}, ...]}}\n\n'
                 "Rules:\n"
-                "- Break complex queries into multiple tool steps.\n"
-                "- If the answer can be given directly, return an empty plan.\n"
+                "- If the query is about document content, plan to call 'rag_query'.\n"
+                "- If you need document metadata, plan to call 'get_document_info'.\n"
+                "- If the query is general conversation, return an empty plan.\n"
             ),
             guardrails=GuardrailConfig(
                 max_iterations=10,
@@ -326,8 +337,12 @@ class AgentSpec(BaseModel):
     @classmethod
     def chat(cls) -> AgentSpec:
         """Simple conversational agent with no tools."""
+        from app.config import get_settings
+
+        _settings = get_settings()
         return cls(
             name="chat",
+            model=ModelConfig(model_name=_settings.LLM_MODEL),
             description=(
                 "General-purpose conversational agent.  No external tools — "
                 "uses only the LLM's built-in knowledge."
@@ -351,8 +366,12 @@ class AgentSpec(BaseModel):
     @classmethod
     def summarise(cls) -> AgentSpec:
         """Document summarisation agent."""
+        from app.config import get_settings
+
+        _settings = get_settings()
         return cls(
             name="summarise",
+            model=ModelConfig(model_name=_settings.LLM_MODEL),
             description=(
                 "Generate concise, structured summaries of documents. "
                 "Extracts key points, decisions, deadlines, and action items."
@@ -360,14 +379,15 @@ class AgentSpec(BaseModel):
             version="1.0.0",
             system_prompt=(
                 "You are a document summarisation agent. "
-                "Given retrieved document content, produce a structured summary "
-                "covering: key points, decisions made, deadlines identified, "
-                "action items, and risks or concerns.\n\n"
+                "First, retrieve document content using the 'rag_query' tool, "
+                "then produce a structured summary covering: key points, "
+                "decisions made, deadlines identified, action items, and "
+                "risks or concerns.\n\n"
                 "Available tools:\n{tools}\n\n"
                 "Respond in the same JSON format: "
                 '{{"action": "tool_call"|"synthesize", ...}}'
             ),
-            tools=["search_documents", "get_document_info"],
+            tools=["rag_query", "get_document_info"],
             guardrails=GuardrailConfig(
                 max_iterations=5,
                 max_cost_usd=3.0,

@@ -36,6 +36,18 @@ class CitationResponse(BaseModel):
     score: float = Field(0.0, description="Relevance score.")
 
 
+class DebugStep(BaseModel):
+    """A single debug step in the agent execution trace."""
+
+    model_config = ConfigDict(frozen=True)
+
+    step_type: str = Field(..., description="Type of step: plan, reason, tool_call, synthesize, etc.")
+    iteration: int = Field(default=0)
+    input_summary: str = Field(default="", description="Input to this step.")
+    output_summary: str = Field(default="", description="Output from this step.")
+    duration_ms: int = Field(default=0)
+
+
 class QAResponse(BaseModel):
     """Response body for a Q&A answer."""
 
@@ -51,6 +63,7 @@ class QAResponse(BaseModel):
     )
     session_id: str
     confidence: float = Field(0.0, ge=0.0, le=1.0)
+    debug_steps: list[DebugStep] = Field(default_factory=list, description="Agent execution trace for debugging.")
 
 
 class QAHISTORYEntry(BaseModel):
