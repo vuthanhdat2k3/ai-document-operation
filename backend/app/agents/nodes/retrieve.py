@@ -64,7 +64,7 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
         registry = get_registry()
         if registry.has("search_documents"):
             entry = registry.get("search_documents")
-            result = entry.function(query=query, top_k=10)
+            result = await entry.function(query=query, top_k=10)
             if isinstance(result, dict):
                 documents = result.get("results", [])
             elif isinstance(result, list):
