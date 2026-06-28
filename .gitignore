@@ -83,7 +83,8 @@ evals/gold_dataset/
 evals/results/
 
 # --- Models (large files) ---
-models/
+/models/
+evals/models/
 *.bin
 *.onnx
 *.pt
@@ -97,3 +98,6 @@ models/
 # --- Misc ---
 *.bak
 *.backup
+.omo/
+backend/app/app/db/models/
+backend/app/app/app/db/models/
