@@ -89,6 +89,9 @@ async def synthesize_node(state: AgentState) -> dict[str, Any]:
     Uses ``get_llm_provider_from_db`` to respect the user's model selection,
     falling back to env vars or extractive synthesis if unavailable.
 
+    Refuses to answer when no documents or tool results are available, to
+    prevent hallucination.
+
     Args:
         state: Current agent state with documents and tool results.
 
@@ -103,40 +106,83 @@ async def synthesize_node(state: AgentState) -> dict[str, Any]:
     iteration = state.get("iteration", 0)
     agent_name = state.get("metadata", {}).get("agent_name", "doc-qa")
 
-    user_message = _build_synthesis_prompt(state)
+    docs = state.get("documents", [])
+    tool_results = state.get("tool_results", [])
+    plan = state.get("plan", [])
 
-    prompt_tokens = 0
-    completion_tokens = 0
-    final_answer = ""
-
-    try:
-        llm = await get_llm_provider_from_db(agent_name=agent_name)
-    except Exception:
-        llm = None
-
-    if llm is not None:
+    # Guard: refuse to hallucinate when the planner expected document context
+    # but nothing was found.  If the plan is empty, the LLM classified the
+    # query as general chat / greeting — respond naturally without guard.
+    if plan and not docs and not tool_results:
+        final_answer = (
+            "Xin lỗi, tôi không tìm thấy tài liệu nào phù hợp với câu hỏi của bạn. "
+            "Vui lòng tải lên tài liệu trước hoặc thử lại với câu hỏi khác."
+        )
+        prompt_tokens = 0
+        completion_tokens = 0
+        logger.info("synthesize_node: plan existed but no context — refused to hallucinate")
+    elif not plan and not docs and not tool_results:
+        # Empty plan = general chat/greeting — use LLM to respond naturally,
+        # fallback to a friendly message if LLM unavailable.
+        prompt_tokens = 0
+        completion_tokens = 0
         try:
-            response = await llm.chat(
-                messages=[
-                    Message(role="system", content=SYNTHESIZE_SYSTEM_PROMPT),
-                    Message(role="user", content=user_message),
-                ],
-                temperature=0.0,
-                max_tokens=2048,
-            )
-            final_answer = response.content
-            prompt_tokens = response.input_tokens
-            completion_tokens = response.output_tokens
-        except Exception as e:
-            logger.error("synthesize_node LLM call failed: %s", e)
+            llm = await get_llm_provider_from_db(agent_name=agent_name)
+        except Exception:
+            llm = None
+        if llm is not None:
+            try:
+                response = await llm.chat(
+                    messages=[
+                        Message(role="system", content="You are a helpful assistant. Answer the user's question naturally and concisely in Vietnamese."),
+                        Message(role="user", content=state.get("messages", [{}])[-1].get("content", "") if isinstance(state.get("messages", [{}])[-1], dict) else ""),
+                    ],
+                    temperature=0.0,
+                    max_tokens=512,
+                )
+                final_answer = response.content
+                prompt_tokens = response.input_tokens
+                completion_tokens = response.output_tokens
+            except Exception as e:
+                logger.error("synthesize_node greeting LLM failed: %s", e)
+                final_answer = "Xin chào! Tôi có thể giúp gì cho bạn?"
+        else:
+            logger.warning("synthesize_node: no LLM provider, using generic greeting")
+            final_answer = "Xin chào! Tôi có thể giúp gì cho bạn?"
+    else:
+        user_message = _build_synthesis_prompt(state)
+
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        try:
+            llm = await get_llm_provider_from_db(agent_name=agent_name)
+        except Exception:
+            llm = None
+
+        if llm is not None:
+            try:
+                response = await llm.chat(
+                    messages=[
+                        Message(role="system", content=SYNTHESIZE_SYSTEM_PROMPT),
+                        Message(role="user", content=user_message),
+                    ],
+                    temperature=0.0,
+                    max_tokens=2048,
+                )
+                final_answer = response.content
+                prompt_tokens = response.input_tokens
+                completion_tokens = response.output_tokens
+            except Exception as e:
+                logger.error("synthesize_node LLM call failed: %s", e)
+                result = _fallback_synthesis(user_message)
+                final_answer = result["answer"]
+                prompt_tokens = result.get("prompt_tokens", 0)
+                completion_tokens = result.get("completion_tokens", 0)
+        else:
+            logger.warning("synthesize_node: no LLM provider, using fallback synthesis")
             result = _fallback_synthesis(user_message)
             final_answer = result["answer"]
-            prompt_tokens = result.get("prompt_tokens", 0)
-            completion_tokens = result.get("completion_tokens", 0)
-    else:
-        logger.warning("synthesize_node: no LLM provider, using fallback synthesis")
-        result = _fallback_synthesis(user_message)
-        final_answer = result["answer"]
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
