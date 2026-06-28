@@ -13,8 +13,11 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_MIME_TYPES: dict[str, tuple[str, ...]] = {
     "application/pdf": (".pdf",),
+    "application/msword": (".doc",),
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (".docx",),
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": (".xlsx",),
+    "text/plain": (".txt", ".text", ".log"),
+    "text/csv": (".csv",),
     "image/png": (".png",),
     "image/jpeg": (".jpg", ".jpeg"),
     "image/tiff": (".tiff", ".tif"),
@@ -123,16 +126,28 @@ class FileValidator:
         file_header: bytes,
         filename: str,
     ) -> tuple[str | None, str | None]:
-        detected = self._detect_mime_from_magic(file_header, filename)
-
         ct_normalized = content_type.strip().lower().split(";")[0].strip()
 
         if ct_normalized not in self._allowed:
             return (
                 f"Content type '{ct_normalized}' is not allowed. "
                 f"Allowed types: {', '.join(sorted(self._allowed))}.",
-                detected,
+                None,
             )
+
+        # Text-based MIME types have no reliable magic bytes — skip detection.
+        if ct_normalized.startswith("text/"):
+            ext = os.path.splitext(filename.lower())[1]
+            allowed_exts = self._allowed.get(ct_normalized, ())
+            if ext and ext not in allowed_exts:
+                return (
+                    f"File extension '{ext}' is not allowed for '{ct_normalized}'. "
+                    f"Expected one of: {', '.join(allowed_exts)}.",
+                    ct_normalized,
+                )
+            return None, ct_normalized
+
+        detected = self._detect_mime_from_magic(file_header, filename)
 
         if detected is None:
             return (

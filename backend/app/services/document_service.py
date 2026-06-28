@@ -7,15 +7,18 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.orm import selectinload
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db.models.document import Document
+from app.db.models.document_page import DocumentChunk
 from app.services.storage import DocumentStorageService
 from app.services.validation import FileValidator, ValidationResult
+from app.vector.client import QdrantClientWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +277,14 @@ class DocumentService:
         user_id: uuid.UUID,
         db: AsyncSession,
     ) -> None:
-        """Soft-delete a document and remove file from storage.
+        """Soft-delete a document and clean up all associated data.
+
+        Performs, in order:
+        1. Delete file from MinIO storage (best-effort).
+        2. Delete vector index points from Qdrant (best-effort).
+        3. Hard-delete DocumentChunks from PostgreSQL (indexed data, not
+           user-facing).
+        4. Soft-delete the Document record itself (audit trail).
 
         Args:
             document_id: The document UUID.
@@ -287,7 +297,7 @@ class DocumentService:
         """
         document = await self.get_document(document_id, user_id, db)
 
-        # Delete file from MinIO storage
+        # 1. Delete file from MinIO storage (best-effort)
         try:
             storage_service = DocumentStorageService()
             await storage_service.delete_document(document.storage_path)
@@ -295,9 +305,35 @@ class DocumentService:
         except Exception:
             logger.warning("Failed to delete file from storage: %s", document.storage_path, exc_info=True)
 
-        # Soft-delete in database
+        # 2. Delete vector index points from Qdrant (best-effort)
+        try:
+            settings = get_settings()
+            qdrant = QdrantClientWrapper(settings)
+            await qdrant.delete_points_by_filter(
+                collection_name="document_chunks",
+                filter_dict={
+                    "must": [{"key": "document_id", "match": {"value": str(document_id)}}],
+                },
+            )
+            await qdrant.close()
+            logger.info("Qdrant points deleted for document: %s", document_id)
+        except Exception:
+            logger.warning("Failed to delete Qdrant points for document: %s", document_id, exc_info=True)
+
+        # 3. Hard-delete DocumentChunks from PostgreSQL
+        try:
+            await db.execute(
+                sa_delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
+            )
+            logger.info("DocumentChunks hard-deleted for document: %s", document_id)
+        except Exception:
+            logger.warning(
+                "Failed to delete DocumentChunks for document: %s", document_id, exc_info=True
+            )
+
+        # 4. Soft-delete the Document record (audit trail)
         document.deleted_at = datetime.now(UTC)
-        document.status = "deleted"
+        document.status = "archived"
         await db.flush()
 
         logger.info("Document soft-deleted: id=%s", document_id)

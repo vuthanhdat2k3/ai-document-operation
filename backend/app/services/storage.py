@@ -31,6 +31,12 @@ class DocumentStorageService:
     def __init__(self, storage: MinioStorage | None = None) -> None:
         settings = get_settings()
         self._storage = storage or MinioStorage(settings)
+        self._bucket_ensured = False
+
+    async def _ensure_bucket(self) -> None:
+        if not self._bucket_ensured:
+            await self._storage.ensure_bucket()
+            self._bucket_ensured = True
 
     async def upload_document(
         self,
@@ -55,6 +61,7 @@ class DocumentStorageService:
         Raises:
             RuntimeError: If the upload fails.
         """
+        await self._ensure_bucket()
         storage_path = self._build_storage_path(user_id, document_id, filename)
         checksum = self._compute_checksum(file_bytes)
         size = len(file_bytes)
