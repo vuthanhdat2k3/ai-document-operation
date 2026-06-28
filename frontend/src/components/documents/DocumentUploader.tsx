@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import { Upload, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUploadDocument } from '@/lib/hooks/useDocuments';
+import { ApiError } from '@/lib/api';
 import { Progress } from '@/components/ui/progress';
 
 interface DocumentUploaderProps {
@@ -22,14 +23,18 @@ export function DocumentUploader({ onUploadComplete }: DocumentUploaderProps) {
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'text/plain',
     'text/csv',
+    'image/png',
+    'image/jpeg',
+    'image/tiff',
   ];
 
   const handleFile = useCallback(
     async (file: File) => {
       if (!ACCEPTED_TYPES.includes(file.type)) {
-        setError('Unsupported file type. Please upload PDF, DOCX, TXT, or CSV.');
+        setError('Unsupported file type. Please upload PDF, DOC, DOCX, XLSX, TXT, CSV, PNG, JPEG, or TIFF.');
         return;
       }
       if (file.size > 50 * 1024 * 1024) {
@@ -50,8 +55,12 @@ export function DocumentUploader({ onUploadComplete }: DocumentUploaderProps) {
           setSuccess(false);
           setUploadProgress(0);
         }, 3000);
-      } catch {
-        setError('Upload failed. Please try again.');
+      } catch (err) {
+        const msg =
+          err instanceof ApiError && typeof err.body === 'object' && err.body !== null
+            ? (err.body as Record<string, unknown>).message as string
+            : 'Upload failed. Please try again.';
+        setError(msg);
       }
     },
     [uploadMutation, onUploadComplete],
@@ -106,13 +115,13 @@ export function DocumentUploader({ onUploadComplete }: DocumentUploaderProps) {
           Drop files here, or click to browse
         </p>
         <p className="text-xs text-muted-foreground/50">
-          PDF, DOCX, TXT, CSV &mdash; up to 50MB
+          PDF, DOC, DOCX, XLSX, TXT, CSV, PNG, JPEG, TIFF &mdash; up to 50MB
         </p>
         <input
           ref={fileInputRef}
           type="file"
           className="hidden"
-          accept=".pdf,.doc,.docx,.txt,.csv"
+          accept=".pdf,.doc,.docx,.xlsx,.txt,.csv,.png,.jpg,.jpeg,.tiff,.tif"
           onChange={handleInputChange}
         />
       </div>

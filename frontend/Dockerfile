@@ -12,7 +12,8 @@ RUN npm install
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
+# Install deps at runtime to stay in sync with bind-mounted package.json
+CMD ["sh", "-c", "npm install && npm run dev"]
 
 # --- Build stage ---
 FROM base AS builder
