@@ -4,11 +4,15 @@ from app.processing.parsers.base import BaseParser
 from app.processing.parsers.pdf_parser import PDFParser
 from app.processing.parsers.docx_parser import DOCXParser
 from app.processing.parsers.xlsx_parser import XLSXParser
+from app.processing.parsers.text_parser import TextParser
 
 _MIME_TO_PARSER: dict[str, type[BaseParser]] = {
     "application/pdf": PDFParser,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DOCXParser,
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": XLSXParser,
+    "text/plain": TextParser,
+    "text/csv": TextParser,
+    "text/html": TextParser,
 }
 
 _PARSER_INSTANCES: dict[str, BaseParser] = {}
@@ -32,4 +36,5 @@ __all__ = [
     "PDFParser",
     "DOCXParser",
     "XLSXParser",
+    "TextParser",
 ]

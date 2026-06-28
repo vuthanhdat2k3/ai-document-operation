@@ -137,6 +137,37 @@ class QdrantClientWrapper:
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
 
+    async def delete_points_by_filter(
+        self,
+        collection_name: str,
+        filter_dict: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Delete points from a collection by filter.
+
+        Uses Qdrant's ``POST /collections/{name}/points/delete`` endpoint
+        with a filter object.  Typical usage::
+
+            await client.delete_points_by_filter(
+                "document_chunks",
+                {"must": [{"key": "document_id", "match": {"value": str(doc_id)}}]},
+            )
+
+        Args:
+            collection_name: Name of the collection to delete from.
+            filter_dict: Qdrant filter condition object (``must`` / ``should`` / …).
+
+        Returns:
+            JSON response from Qdrant.
+        """
+        client = await self._get_client()
+        payload: dict[str, Any] = {"filter": filter_dict}
+        resp = await client.post(
+            f"/collections/{collection_name}/points/delete",
+            json=payload,
+        )
+        resp.raise_for_status()
+        return resp.json()  # type: ignore[no-any-return]
+
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         if self._client is not None and not self._client.is_closed:

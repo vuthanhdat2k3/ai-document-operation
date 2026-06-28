@@ -16,11 +16,16 @@ import redis.asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from qdrant_client import QdrantClient
+
+from app.config import get_settings
 from app.db.models.document import Document
-from app.db.models.document_page import DocumentPage
+from app.db.models.document_page import DocumentChunk, DocumentPage
 from app.db.session import get_session_factory
 from app.processing.parsers import get_parser
 from app.processing.parsers.base import ParseResult
+from app.rag.chunker import TextChunker
+from app.rag.embedder import EmbeddingPipeline
 from app.services.storage import DocumentStorageService
 
 logger = logging.getLogger(__name__)
@@ -175,6 +180,42 @@ async def process_document_task(ctx: dict[str, Any], document_id: str) -> dict[s
 
             await _update_progress(redis, task_id, "processing", 0.8)
 
+            chunk_records: list[DocumentChunk] = []
+            chunker = TextChunker()
+            chunk_index = 0
+            for page_record in page_records:
+                if not page_record.ocr_text:
+                    continue
+                raw_chunks = chunker.recursive_split(
+                    page_record.ocr_text,
+                    metadata={"page": page_record.page_number},
+                    page=page_record.page_number,
+                )
+                for c in raw_chunks:
+                    chunk_records.append(
+                        DocumentChunk(
+                            id=uuid.uuid4(),
+                            document_id=doc_uuid,
+                            page_number=page_record.page_number,
+                            chunk_index=chunk_index,
+                            chunk_text=c.text,
+                            chunk_metadata={
+                                "page": page_record.page_number,
+                                "start_offset": c.start_offset,
+                                "end_offset": c.end_offset,
+                            },
+                        )
+                    )
+                    chunk_index += 1
+            for cr in chunk_records:
+                db.add(cr)
+            await db.flush()
+            logger.info(
+                "Created %d chunks for document %s",
+                len(chunk_records),
+                document_id,
+            )
+
             document.status = "completed"
             document.page_count = len(page_records)
             document.processed_at = datetime.now(UTC)
@@ -185,6 +226,92 @@ async def process_document_task(ctx: dict[str, Any], document_id: str) -> dict[s
                 document.metadata_ = existing_meta
 
             await db.commit()
+
+            # Index chunks into Qdrant (embed + upsert).
+            # Done inline rather than via IndexingService because that service
+            # has a type mismatch: ensure_document_collection expects async
+            # QdrantClientWrapper but index_document also calls sync
+            # _client.upsert, and the two are incompatible.
+            if chunk_records:
+                try:
+                    from qdrant_client.models import PointStruct, SparseVector
+
+                    from app.vector.client import QdrantClientWrapper
+                    from app.vector.collections import (
+                        DEFAULT_COLLECTION,
+                        DENSE_VECTOR_NAME,
+                        SPARSE_VECTOR_NAME,
+                        ensure_document_collection,
+                    )
+
+                    settings = get_settings()
+
+                    # Ensure Qdrant collection exists (async wrapper)
+                    async_wrapper = QdrantClientWrapper(settings)
+                    try:
+                        await ensure_document_collection(async_wrapper)
+                    finally:
+                        await async_wrapper.close()
+
+                    # Embed chunk texts
+                    index_embedder = EmbeddingPipeline()
+                    texts = [cr.chunk_text for cr in chunk_records]
+                    embedding_result = index_embedder.embed_texts(texts)
+
+                    # Build points and upsert (sync SDK)
+                    sync_client = QdrantClient(
+                        url=settings.QDRANT_URL,
+                        api_key=settings.QDRANT_API_KEY,
+                    )
+                    points: list[PointStruct] = []
+                    for i, cr in enumerate(chunk_records):
+                        payload = {
+                            "document_id": str(doc_uuid),
+                            "page": cr.page_number,
+                            "text": cr.chunk_text,
+                            "chunk_index": cr.chunk_index,
+                        }
+                        vectors: dict[str, object] = {
+                            DENSE_VECTOR_NAME: embedding_result.dense[i],
+                        }
+                        if embedding_result.sparse and i < len(embedding_result.sparse):
+                            sparse_data = embedding_result.sparse[i]
+                            if sparse_data.get("indices"):
+                                vectors[SPARSE_VECTOR_NAME] = SparseVector(
+                                    indices=sparse_data["indices"],
+                                    values=sparse_data["values"],
+                                )
+                        points.append(
+                            PointStruct(id=str(cr.id), vector=vectors, payload=payload)
+                        )
+
+                    batch_size = 100
+                    for start in range(0, len(points), batch_size):
+                        batch = points[start : start + batch_size]
+                        sync_client.upsert(
+                            collection_name=DEFAULT_COLLECTION,
+                            points=batch,
+                        )
+
+                    for i, cr in enumerate(chunk_records):
+                        cr.embedding_model = index_embedder.model_name
+                        cr.embedding_dim = len(embedding_result.dense[i])
+                        cr.embedding_ref = f"{DEFAULT_COLLECTION}:{cr.id}"
+                        cr.token_count = len(cr.chunk_text.split())
+                    db.add_all(chunk_records)
+                    await db.commit()
+
+                    logger.info(
+                        "Indexed %d chunks to Qdrant for document %s",
+                        len(chunk_records),
+                        document_id,
+                    )
+
+                except Exception:
+                    logger.exception(
+                        "Indexing failed for document %s (document parsed OK)",
+                        document_id,
+                    )
 
             await _update_progress(redis, task_id, "completed", 1.0)
 

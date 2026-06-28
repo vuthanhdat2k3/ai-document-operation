@@ -55,7 +55,13 @@ def _load_builtin_tools() -> None:
         logger.exception("Failed to load built-in tool stubs")
 
 
-def _bind_rag_tool() -> None:
+def _bind_rag_tool() -> HybridRetriever | None:
+    """Bind live pipeline components to the rag_query tool.
+
+    Returns:
+        The ``HybridRetriever`` instance so it can be reused by
+        ``_bind_search_tool``, or ``None`` if binding failed.
+    """
     try:
         from qdrant_client import QdrantClient
 
@@ -88,8 +94,37 @@ def _bind_rag_tool() -> None:
         else:
             logger.warning("rag_query tool not found in registry")
 
+        return retriever
+
     except Exception:
         logger.exception("Failed to bind RAG tool, stub will remain in place")
+        return None
+
+
+def _bind_search_tool(retriever: HybridRetriever | None) -> None:
+    """Bind a live HybridRetriever to the search_documents tool.
+
+    Args:
+        retriever: A ``HybridRetriever`` instance from ``_bind_rag_tool``.
+    """
+    if retriever is None:
+        logger.warning("search_documents: no retriever available, stub remains in place")
+        return
+
+    try:
+        from app.agents.tools.registry import get_registry
+        from app.agents.tools.search_tool import create_bound_search_tool
+
+        bound = create_bound_search_tool(retriever)
+
+        registry = get_registry()
+        if registry.has("search_documents"):
+            registry._tools["search_documents"].function = bound
+            logger.info("search_documents tool bound with live retriever")
+        else:
+            logger.warning("search_documents tool not found in registry")
+    except Exception:
+        logger.exception("Failed to bind search_documents tool, stub remains")
 
 
 async def _warm_up_models() -> None:
@@ -150,7 +185,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await _init_vector_store()
     except Exception:
         logger.warning("Qdrant not available, continuing without vector store")
-    _bind_rag_tool()
+    retriever = _bind_rag_tool()
+    _bind_search_tool(retriever)
     await _warm_up_models()
     logger.info("Application startup complete")
 
