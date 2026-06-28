@@ -58,6 +58,29 @@ def make_plan_node(spec: AgentSpec) -> Any:
             logger.warning("plan_node: LLM did not return a valid plan")
             plan = []
 
+        if not plan and user_query:
+            # Safety net: if the query explicitly mentions document-search keywords,
+            # override.  Otherwise trust the LLM's reasoning.
+            _SEARCH_KEYWORDS = [
+                "tra cứu", "tìm kiếm", "tài liệu", "search", "look up",
+                "find", "document", "what is", "cho biết",
+            ]
+            query_lower = user_query.lower()
+            if any(kw in query_lower for kw in _SEARCH_KEYWORDS):
+                logger.info(
+                    "plan_node(%s): empty plan overridden — query contains "
+                    "search keywords, forcing rag_query",
+                    spec.name,
+                )
+                plan = [
+                    {
+                        "step": 1,
+                        "tool": "rag_query",
+                        "args": {"query": user_query, "top_k": 10},
+                        "reason": "User explicitly asked to search documents.",
+                    }
+                ]
+
         # Log plan
         if plan:
             steps_desc = "; ".join(

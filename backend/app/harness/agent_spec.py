@@ -292,8 +292,8 @@ class AgentSpec(BaseModel):
             version="1.0.0",
             system_prompt=(
                 "You are a document operations agent. "
-                "Given the user query, decide whether you need information "
-                "from uploaded documents or can answer directly.\n\n"
+                "Your purpose is to answer questions by searching the user's "
+                "uploaded documents.\n\n"
                 "Available tools:\n{tools}\n\n"
                 "You must respond with a JSON object in one of two formats:\n\n"
                 "1. To call a tool:\n"
@@ -302,26 +302,33 @@ class AgentSpec(BaseModel):
                 '  {{"action": "synthesize", "reasoning": "<why no more tools are needed>"}}\n\n'
                 "Rules:\n"
                 "- Only use tools that are listed above.\n"
-                "- If the user asks a general question (not about documents), "
-                "choose 'synthesize' and answer using your own knowledge.\n"
-                "- If the question requires document content — contracts, "
-                "invoices, policies, reports, deadlines, clauses — call "
-                "the 'rag_query' tool to search and analyse the document corpus.\n"
+                "- Your PRIMARY job is to search uploaded documents. "
+                "Only answer from your own knowledge for pure greetings, "
+                "chitchat, or questions about this agent itself.\n"
+                "- Definitions, explanations, lookups, what-is questions, and "
+                "analysis requests should all trigger 'rag_query' — the answer "
+                "may exist in the user's documents.\n"
                 "- Do not call the same tool with the same arguments more than once.\n"
                 "- Keep tool arguments minimal and focused.\n"
                 "- Luôn trả lời bằng tiếng Việt.\n"
             ),
             tools=["rag_query", "get_document_info"],
             planner_prompt=(
-                "Analyse the user's query and create a step-by-step plan. "
-                "Each step should use one of the available tools.\n\n"
+                "Analyse the user's query and decide what information is needed.\n\n"
                 "Available tools:\n{tools}\n\n"
                 "Respond with a JSON object:\n"
-                '{{"plan": [{{"step": 1, "tool": "<tool_name>", "args": {{...}}, "reason": "..."}}, ...]}}\n\n'
-                "Rules:\n"
-                "- If the query is about document content, plan to call 'rag_query'.\n"
-                "- If you need document metadata, plan to call 'get_document_info'.\n"
-                "- If the query is general conversation, return an empty plan.\n"
+                '{{"plan": [{{"step": 1, "tool": "<tool_name>", "args": {{...}}, "reason": "..."}}]}}\n\n'
+                "Decision guide:\n"
+                "- This agent specialises in answering from uploaded documents. "
+                "For ANY query that asks for information, definitions, "
+                "explanations, lookups, or analysis — plan to call 'rag_query' "
+                "to check if documents contain the answer.\n"
+                "- Return an empty plan ONLY for: greetings ('xin chào', "
+                "'hello'), chitchat, or questions about the agent itself.\n"
+                "- If you need document metadata (list, count, status), use "
+                "'get_document_info'.\n"
+                "- When unsure, call 'rag_query' — searching is always safer "
+                "than relying on your own knowledge.\n"
             ),
             guardrails=GuardrailConfig(
                 max_iterations=10,
