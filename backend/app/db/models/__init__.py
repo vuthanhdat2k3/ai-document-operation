@@ -9,6 +9,7 @@ from app.db.models.agent import AgentSession, AgentStep, ToolCall
 from app.db.models.eval import EvalDataset, EvalRun
 from app.db.models.audit import AuditLog
 from app.db.models.chat import ChatSession, ChatMessage
+from app.db.models.provider import LLMProvider, LLMModel, AgentModelConfig
 
 __all__ = [
     "User",
@@ -28,4 +29,7 @@ __all__ = [
     "AuditLog",
     "ChatSession",
     "ChatMessage",
+    "LLMProvider",
+    "LLMModel",
+    "AgentModelConfig",
 ]

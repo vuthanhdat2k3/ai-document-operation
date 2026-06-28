@@ -398,6 +398,7 @@ A feature is done when **all** of the following are true:
 - [ ] Performance: API responses < 500ms (p95) for non-LLM endpoints
 - [ ] Commit message follows conventional commits
 - [ ] PR description includes: what changed, why, how to test
+- [ ] **Docker images rebuilt và containers restart** để áp dụng thay đổi (xem mục 15)
 
 ---
 
@@ -982,6 +983,53 @@ docker compose exec postgres psql -U postgres -d ai_doc_ops -c "EXPLAIN ANALYZE 
 # Check Redis hit rate
 docker compose exec redis redis-cli INFO stats | grep keyspace
 ```
+
+---
+
+## 15. How to Apply Changes (Rebuild Docker)
+
+Sau khi sửa code backend (đặc biệt là **system prompt**, **agent logic**, hoặc **dependencies**), phải rebuild Docker để thay đổi có hiệu lực:
+
+### 15.1 Rebuild và restart tất cả services
+
+```bash
+# Build lại images (không dùng cache để đảm bảo code mới nhất)
+docker compose build --no-cache api
+
+# Hoặc rebuild tất cả
+docker compose build --no-cache
+
+# Restart containers với image mới
+docker compose up -d
+```
+
+### 15.2 Rebuild nhanh (chỉ restart container)
+
+Nếu chỉ sửa code Python (không thay đổi `pyproject.toml` hay `Dockerfile`):
+
+```bash
+# Chỉ restart API container để áp dụng code mới
+docker compose restart api
+```
+
+### 15.3 Kiểm tra container đã dùng code mới
+
+```bash
+# Kiểm tra logs xác nhận container dùng code mới
+docker compose logs api --tail=20
+
+# Kiểm tra health endpoint
+curl http://localhost:8000/health
+```
+
+### 15.4 Xử lý lỗi khi rebuild
+
+| Lỗi | Nguyên nhân | Fix |
+|-----|------------|-----|
+| `Python: can't open file` | Build cache cũ | `docker compose build --no-cache api` |
+| Lỗi import module | Thiếu dependency | Kiểm tra `pyproject.toml`, thêm dependency, rebuild |
+| Container crash loop | Lỗi syntax Python | Kiểm tra logs: `docker compose logs api` |
+| Thay đổi không có hiệu lực | Container chưa được restart | `docker compose restart api` |
 
 ---
 

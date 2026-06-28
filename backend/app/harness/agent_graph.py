@@ -290,31 +290,40 @@ def _make_synthesize_node(spec: AgentSpec) -> Any:
     """Create a simple synthesize node for non-tool agents.
 
     Uses the agent's system prompt and calls the LLM directly.
+    Resolves the LLM provider from the database when an agent config exists.
     """
 
     async def synthesize_node(state: dict) -> dict:
         import time
 
         from app.agents.state import StepRecord
-        from app.llm.factory import get_llm_provider
         from app.llm.base import Message
+        from app.llm.factory import get_llm_provider, get_llm_provider_from_db
 
         start = time.monotonic()
         messages = state.get("messages", [])
 
-        llm = get_llm_provider()
+        try:
+            llm = await get_llm_provider_from_db(agent_name=spec.name)
+        except Exception:
+            llm = get_llm_provider()
+
         llm_messages = [
             Message(role="system", content=spec.system_prompt),
             *(Message(role=m.get("role", "user"), content=m.get("content", ""))
               for m in messages if isinstance(m, dict)),
         ]
 
+        model_name = None
+        max_tokens_val = spec.model.max_tokens
+        temperature_val = spec.model.temperature
+
         try:
             response = await llm.chat(
                 messages=llm_messages,
-                model=spec.model.model_name,
-                max_tokens=spec.model.max_tokens,
-                temperature=spec.model.temperature,
+                model=model_name,
+                max_tokens=max_tokens_val,
+                temperature=temperature_val,
             )
             answer = response.content
         except Exception as e:

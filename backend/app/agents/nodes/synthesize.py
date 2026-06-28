@@ -17,6 +17,7 @@ Rules:
 - If the context is insufficient, state what information is missing.
 - Cite specific documents or chunks when possible.
 - Keep the answer concise and directly addressing the user's query.
+- Luôn trả lời bằng tiếng Việt.
 """
 
 
@@ -56,48 +57,6 @@ def _build_synthesis_prompt(state: AgentState) -> str:
     return "\n".join(parts)
 
 
-def _call_llm_synthesize(system_prompt: str, user_message: str) -> dict[str, Any]:
-    """Call the LLM to generate the final synthesized answer."""
-    try:
-        from openai import OpenAI
-
-        from app.config import get_settings
-
-        settings = get_settings()
-        if not settings.OPENAI_API_KEY:
-            logger.warning("synthesize_node: OPENAI_API_KEY not set")
-            return {
-                "answer": "Unable to generate answer: LLM service unavailable.",
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-            }
-
-        base_url = getattr(settings, "OPENAI_API_BASE", None) or "https://api.openai.com/v1"
-        client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=base_url)
-        response = client.chat.completions.create(
-            model=settings.LLM_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.0,
-            max_tokens=2048,
-        )
-        content = response.choices[0].message.content or ""
-        usage = response.usage
-        return {
-            "answer": content.strip(),
-            "prompt_tokens": usage.prompt_tokens if usage else 0,
-            "completion_tokens": usage.completion_tokens if usage else 0,
-        }
-    except ImportError:
-        logger.warning("synthesize_node: openai package not installed")
-        return _fallback_synthesis(user_message)
-    except Exception as e:
-        logger.error("synthesize_node LLM call failed: %s", e)
-        return _fallback_synthesis(user_message)
-
-
 def _fallback_synthesis(user_message: str) -> dict[str, Any]:
     """Generate a simple extractive answer when the LLM is unavailable.
 
@@ -127,8 +86,8 @@ def _fallback_synthesis(user_message: str) -> dict[str, Any]:
 async def synthesize_node(state: AgentState) -> dict[str, Any]:
     """Generate the final answer from accumulated context and tool results.
 
-    If an LLM is available, uses it to produce a coherent answer.
-    Otherwise falls back to extractive synthesis from retrieved chunks.
+    Uses ``get_llm_provider_from_db`` to respect the user's model selection,
+    falling back to env vars or extractive synthesis if unavailable.
 
     Args:
         state: Current agent state with documents and tool results.
@@ -137,17 +96,49 @@ async def synthesize_node(state: AgentState) -> dict[str, Any]:
         Partial state update with ``final_answer``, ``current_step``,
         updated ``metadata``, and appended ``steps``.
     """
+    from app.llm.base import Message
+    from app.llm.factory import get_llm_provider_from_db
+
     start = time.monotonic()
     iteration = state.get("iteration", 0)
+    agent_name = state.get("metadata", {}).get("agent_name", "doc-qa")
 
     user_message = _build_synthesis_prompt(state)
-    result = _call_llm_synthesize(SYNTHESIZE_SYSTEM_PROMPT, user_message)
 
-    final_answer = result["answer"]
+    prompt_tokens = 0
+    completion_tokens = 0
+    final_answer = ""
+
+    try:
+        llm = await get_llm_provider_from_db(agent_name=agent_name)
+    except Exception:
+        llm = None
+
+    if llm is not None:
+        try:
+            response = await llm.chat(
+                messages=[
+                    Message(role="system", content=SYNTHESIZE_SYSTEM_PROMPT),
+                    Message(role="user", content=user_message),
+                ],
+                temperature=0.0,
+                max_tokens=2048,
+            )
+            final_answer = response.content
+            prompt_tokens = response.input_tokens
+            completion_tokens = response.output_tokens
+        except Exception as e:
+            logger.error("synthesize_node LLM call failed: %s", e)
+            result = _fallback_synthesis(user_message)
+            final_answer = result["answer"]
+            prompt_tokens = result.get("prompt_tokens", 0)
+            completion_tokens = result.get("completion_tokens", 0)
+    else:
+        logger.warning("synthesize_node: no LLM provider, using fallback synthesis")
+        result = _fallback_synthesis(user_message)
+        final_answer = result["answer"]
+
     elapsed_ms = int((time.monotonic() - start) * 1000)
-
-    prompt_tokens = result.get("prompt_tokens", 0)
-    completion_tokens = result.get("completion_tokens", 0)
 
     existing_cost = state.get("metadata", {}).get("cost", {})
     cost_update = {

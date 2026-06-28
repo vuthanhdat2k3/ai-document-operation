@@ -1,20 +1,19 @@
 """LLM provider factory.
 
-Creates the appropriate provider based on settings.
-Supported providers: openai, anthropic, xiaomi, local
+Creates the appropriate provider based on database configuration only.
+If no provider/model is configured in the database, returns a fallback
+that indicates no LLM is available.
+
+Supports providers: openai, anthropic, xiaomi, local, google-gemini, openai-compatible
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from app.llm.anthropic_provider import AnthropicProvider, XiaomiProvider
 from app.llm.base import LLMProvider
 from app.llm.openai_provider import OpenAIProvider
-
-if TYPE_CHECKING:
-    from app.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ class _FallbackLLM(LLMProvider):
     async def chat(self, messages, model=None, max_tokens=4096, temperature=0.1, system=None):
         from app.llm.base import LLMResponse
         return LLMResponse(
-            content="No LLM provider configured. Please set LLM_PROVIDER and API keys in .env",
+            content="No LLM provider configured. Please add a provider and model in the Providers page.",
             model="fallback",
         )
 
@@ -46,80 +45,157 @@ class _FallbackLLM(LLMProvider):
         return "fallback"
 
 
-def get_llm_provider(settings: Settings | None = None) -> LLMProvider:
-    """Create an LLM provider based on application settings.
+async def get_llm_provider_from_db(
+    agent_name: str | None = None,
+) -> LLMProvider:
+    """Create an LLM provider using database configuration.
+
+    Resolves the provider and model from the database exclusively.
+    If no DB config is found or the config is incomplete, returns
+    ``_FallbackLLM`` — no env var fallback.
 
     Args:
-        settings: Application settings. Loaded from env if not provided.
+        agent_name: Agent name to look up model config in ``agent_model_configs``.
 
     Returns:
-        Configured LLMProvider instance.
-
-    Supported providers:
-        - ``openai``: OpenAI API (gpt-4o, etc.)
-        - ``anthropic``: Anthropic API (claude-3, etc.)
-        - ``xiaomi``: Xiaomi MiMo (Anthropic-compatible)
-        - ``local``: Local model via OpenAI-compatible API (Ollama, vLLM)
+        Configured LLMProvider instance, or ``_FallbackLLM`` if unavailable.
     """
-    if settings is None:
-        from app.config import get_settings
-        settings = get_settings()
+    provider_slug: str | None = None
+    model_slug: str | None = None
+    api_key: str | None = None
+    api_base: str | None = None
+    max_tokens: int | None = None
+    temperature: float | None = None
 
-    provider = settings.LLM_PROVIDER.lower()
-    model = settings.LLM_MODEL
-    max_tokens = settings.LLM_MAX_TOKENS
-    timeout = settings.LLM_TIMEOUT
+    # 1. Try to resolve from DB via agent config
+    if agent_name:
+        try:
+            from sqlalchemy import select
 
-    if provider == "xiaomi":
-        api_key = settings.XIAOMI_API_KEY or settings.ANTHROPIC_API_KEY or ""
+            from app.db.models.provider import AgentModelConfig, LLMModel, LLMProvider
+            from app.db.session import get_session_factory
+
+            factory = get_session_factory()
+            async with factory() as session:
+                stmt = (
+                    select(AgentModelConfig)
+                    .where(
+                        AgentModelConfig.agent_name == agent_name,
+                        AgentModelConfig.is_active.is_(True),
+                    )
+                )
+                result = await session.execute(stmt)
+                config = result.scalar_one_or_none()
+
+                if config:
+                    # Resolve provider
+                    prov_result = await session.execute(
+                        select(LLMProvider).where(LLMProvider.id == config.provider_id)
+                    )
+                    provider = prov_result.scalar_one_or_none()
+                    if provider and provider.is_active:
+                        provider_slug = provider.slug
+                        api_key = provider.api_key
+                        api_base = provider.api_base_url
+
+                        # Resolve model
+                        mod_result = await session.execute(
+                            select(LLMModel).where(LLMModel.id == config.model_id)
+                        )
+                        model = mod_result.scalar_one_or_none()
+                        if model and model.is_active:
+                            model_slug = model.slug
+                            max_tokens = config.max_tokens or model.max_tokens
+                            temperature = config.temperature or model.default_temperature
+
+        except Exception:
+            logger.warning("Failed to resolve LLM from DB for agent '%s'", agent_name)
+
+    # 2. No DB config → fallback
+    if not provider_slug or not model_slug:
+        return _FallbackLLM()
+
+    # 3. Create provider from DB config with hardcoded defaults
+    resolved_max_tokens = max_tokens or 4096
+    resolved_timeout = 60
+
+    if provider_slug == "xiaomi":
         if not api_key:
-            logger.warning("XIAOMI_API_KEY not set, using fallback LLM")
+            logger.warning("No API key for xiaomi provider '%s'", provider_slug)
             return _FallbackLLM()
         return XiaomiProvider(
             api_key=api_key,
-            base_url=settings.XIAOMI_BASE_URL,
-            model=settings.XIAOMI_MODEL,
-            max_tokens=max_tokens,
-            timeout=timeout,
+            base_url=api_base or "",
+            model=model_slug,
+            max_tokens=resolved_max_tokens,
+            timeout=resolved_timeout,
             enable_thinking=True,
             thinking_budget=1024,
         )
 
-    elif provider == "anthropic":
-        api_key = settings.ANTHROPIC_API_KEY or ""
+    elif provider_slug == "anthropic":
         if not api_key:
-            logger.warning("ANTHROPIC_API_KEY not set, using fallback LLM")
+            logger.warning("No API key for anthropic provider '%s'", provider_slug)
             return _FallbackLLM()
         return AnthropicProvider(
             api_key=api_key,
-            base_url=settings.ANTHROPIC_BASE_URL,
-            model=model,
-            max_tokens=max_tokens,
-            timeout=timeout,
+            base_url=api_base or "",
+            model=model_slug,
+            max_tokens=resolved_max_tokens,
+            timeout=resolved_timeout,
         )
 
-    elif provider == "openai":
-        api_key = settings.OPENAI_API_KEY or ""
+    elif provider_slug in ("openai", "google-gemini"):
         if not api_key:
-            logger.warning("OPENAI_API_KEY not set, using fallback LLM")
+            logger.warning("No API key for provider '%s'", provider_slug)
             return _FallbackLLM()
+        base_url = api_base
+        if not base_url and provider_slug == "google-gemini":
+            base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
         return OpenAIProvider(
             api_key=api_key,
-            base_url=settings.OPENAI_API_BASE,
-            model=model,
-            max_tokens=max_tokens,
-            timeout=timeout,
+            base_url=base_url or "",
+            model=model_slug,
+            max_tokens=resolved_max_tokens,
+            timeout=resolved_timeout,
         )
 
-    elif provider == "local":
+    elif provider_slug == "local":
         return OpenAIProvider(
             api_key="not-needed",
-            base_url=settings.LOCAL_LLM_BASE_URL,
-            model=model,
-            max_tokens=max_tokens,
-            timeout=timeout,
+            base_url=api_base or "",
+            model=model_slug,
+            max_tokens=resolved_max_tokens,
+            timeout=resolved_timeout,
+        )
+
+    elif provider_slug == "openai-compatible":
+        api_key_value = api_key or "not-needed"
+        return OpenAIProvider(
+            api_key=api_key_value,
+            base_url=api_base or "",
+            model=model_slug,
+            max_tokens=resolved_max_tokens,
+            timeout=resolved_timeout,
         )
 
     else:
-        logger.warning("Unknown LLM_PROVIDER '%s', using fallback", provider)
-        return _FallbackLLM()
+        logger.info("Unknown provider slug '%s' — treating as openai-compatible", provider_slug)
+        api_key_value = api_key or "not-needed"
+        return OpenAIProvider(
+            api_key=api_key_value,
+            base_url=api_base or "",
+            model=model_slug,
+            max_tokens=resolved_max_tokens,
+            timeout=resolved_timeout,
+        )
+
+
+def get_llm_provider(settings=None) -> LLMProvider:
+    """Synchronous fallback — always returns _FallbackLLM.
+
+    LLM providers are now resolved exclusively from the database.
+    This function exists only for backward compatibility with code
+    that has not yet been migrated to ``get_llm_provider_from_db()``.
+    """
+    return _FallbackLLM()

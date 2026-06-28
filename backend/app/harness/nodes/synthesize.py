@@ -37,7 +37,7 @@ def make_synthesize_node(spec: AgentSpec) -> Any:
     async def synthesize_node(state: dict[str, Any]) -> dict[str, Any]:
         from app.agents.state import StepRecord
         from app.llm.base import Message
-        from app.llm.factory import get_llm_provider
+        from app.llm.factory import get_llm_provider, get_llm_provider_from_db
 
         start = time.monotonic()
         iteration = state.get("iteration", 0)
@@ -45,7 +45,10 @@ def make_synthesize_node(spec: AgentSpec) -> Any:
         system_content = base_prompt + synthesis_instruction
         user_message = _build_synthesis_prompt(state)
 
-        llm = get_llm_provider()
+        try:
+            llm = await get_llm_provider_from_db(agent_name=spec.name)
+        except Exception:
+            llm = get_llm_provider()
         llm_messages = [
             Message(role="system", content=system_content),
             Message(role="user", content=user_message),
@@ -54,7 +57,7 @@ def make_synthesize_node(spec: AgentSpec) -> Any:
         try:
             response = await llm.chat(
                 messages=llm_messages,
-                model=spec.model.model_name,
+                model=None,
                 max_tokens=spec.model.max_tokens,
                 temperature=spec.model.temperature,
             )

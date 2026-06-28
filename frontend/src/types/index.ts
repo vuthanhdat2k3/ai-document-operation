@@ -272,4 +272,54 @@ export interface DashboardStats {
   }>;
 }
 
+export interface LLMProvider {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  api_base_url: string | null;
+  api_key?: string | null;
+  config_schema: Record<string, unknown> | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LLMModel {
+  id: string;
+  provider_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  max_tokens: number;
+  default_temperature: number;
+  supports_streaming: boolean;
+  supports_thinking: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentModelConfig {
+  id: string;
+  agent_name: string;
+  provider_id: string;
+  model_id: string;
+  temperature: number | null;
+  max_tokens: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  provider_name?: string;
+  model_name?: string;
+  model_slug?: string;
+}
+
+export interface AgentInfo {
+  name: string;
+  description?: string;
+  agent_type?: string;
+  is_active?: boolean;
+}
+
 export { };

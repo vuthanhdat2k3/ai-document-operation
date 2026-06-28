@@ -281,12 +281,9 @@ class AgentSpec(BaseModel):
     @classmethod
     def doc_qa(cls) -> AgentSpec:
         """Built-in document Q&A agent template."""
-        from app.config import get_settings
-
-        _settings = get_settings()
         return cls(
             name="doc-qa",
-            model=ModelConfig(model_name=_settings.LLM_MODEL),
+            model=ModelConfig(model_name=""),
             description=(
                 "Answer questions over the document corpus using hybrid "
                 "retrieval (dense + sparse).  Supports contract analysis, "
@@ -312,6 +309,7 @@ class AgentSpec(BaseModel):
                 "the 'rag_query' tool to search and analyse the document corpus.\n"
                 "- Do not call the same tool with the same arguments more than once.\n"
                 "- Keep tool arguments minimal and focused.\n"
+                "- Luôn trả lời bằng tiếng Việt.\n"
             ),
             tools=["rag_query", "get_document_info"],
             planner_prompt=(
@@ -337,12 +335,9 @@ class AgentSpec(BaseModel):
     @classmethod
     def chat(cls) -> AgentSpec:
         """Simple conversational agent with no tools."""
-        from app.config import get_settings
-
-        _settings = get_settings()
         return cls(
             name="chat",
-            model=ModelConfig(model_name=_settings.LLM_MODEL),
+            model=ModelConfig(model_name=""),
             description=(
                 "General-purpose conversational agent.  No external tools — "
                 "uses only the LLM's built-in knowledge."
@@ -351,7 +346,8 @@ class AgentSpec(BaseModel):
             system_prompt=(
                 "You are a helpful AI assistant. Answer the user's questions "
                 "concisely and accurately using your built-in knowledge.\n\n"
-                "If you don't know something, say so — do not make up information."
+                "If you don't know something, say so — do not make up information.\n"
+                "Luôn trả lời bằng tiếng Việt."
             ),
             tools=[],
             guardrails=GuardrailConfig(
@@ -366,12 +362,9 @@ class AgentSpec(BaseModel):
     @classmethod
     def summarise(cls) -> AgentSpec:
         """Document summarisation agent."""
-        from app.config import get_settings
-
-        _settings = get_settings()
         return cls(
             name="summarise",
-            model=ModelConfig(model_name=_settings.LLM_MODEL),
+            model=ModelConfig(model_name=""),
             description=(
                 "Generate concise, structured summaries of documents. "
                 "Extracts key points, decisions, deadlines, and action items."
@@ -385,7 +378,8 @@ class AgentSpec(BaseModel):
                 "risks or concerns.\n\n"
                 "Available tools:\n{tools}\n\n"
                 "Respond in the same JSON format: "
-                '{{"action": "tool_call"|"synthesize", ...}}'
+                '{{"action": "tool_call"|"synthesize", ...}}\n\n'
+                "Luôn trả lời bằng tiếng Việt."
             ),
             tools=["rag_query", "get_document_info"],
             guardrails=GuardrailConfig(

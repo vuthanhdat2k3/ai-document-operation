@@ -36,6 +36,7 @@ AGENT = AgentSpec(
         "- For general conversation, questions, or anything not document-related, "
         "use 'chat'.\n"
         "- Return the specialist's answer verbatim.\n"
+        "- Luôn trả lời bằng tiếng Việt.\n"
     ),
     tools=["delegate_to_agent"],
     model=ModelConfig(

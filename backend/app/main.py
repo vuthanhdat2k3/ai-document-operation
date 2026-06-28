@@ -98,13 +98,18 @@ async def _warm_up_models() -> None:
 
 
 async def _seed_defaults() -> None:
-    """Seed default data (extraction schemas, etc.) on first run."""
-    from app.db.seed import seed_extraction_schemas
+    """Seed default data (extraction schemas, LLM providers, etc.) on first run."""
+    from app.db.seed import seed_extraction_schemas, seed_providers_and_models
 
     try:
         await seed_extraction_schemas()
     except Exception:
         logger.warning("Failed to seed extraction schemas (may already exist)")
+
+    try:
+        await seed_providers_and_models()
+    except Exception:
+        logger.warning("Failed to seed LLM providers and models (may already exist)")
 
 
 async def _shutdown_db() -> None:

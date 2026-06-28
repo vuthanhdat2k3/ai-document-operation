@@ -17,6 +17,7 @@ Rules:
 - If the context is insufficient, state what information is missing.
 - Cite specific documents or chunks when possible.
 - Keep the answer concise and directly addressing the user's query.
+- Luôn trả lời bằng tiếng Việt.
 """
 
 

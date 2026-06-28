@@ -14,6 +14,7 @@ from app.api.v1.parsing import router as parsing_router
 from app.api.v1.qa import router as qa_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.risks import router as risks_router
+from app.api.v1.providers import router as providers_router
 from app.api.v1.search import router as search_router
 
 v1_router = APIRouter(prefix="/api/v1")
@@ -30,4 +31,5 @@ v1_router.include_router(qa_router)
 v1_router.include_router(reports_router)
 v1_router.include_router(risks_router)
 v1_router.include_router(search_router)
+v1_router.include_router(providers_router)
 v1_router.include_router(agent_router)

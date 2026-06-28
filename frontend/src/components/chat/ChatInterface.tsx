@@ -14,13 +14,15 @@ import {
   Check,
   Trash2,
   Bug,
+  Cpu,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useChat } from '@/lib/hooks/useChat';
+import { useProviders, useProviderModels, useAgentModelConfig, useSetAgentModelConfig } from '@/lib/hooks/useProviders';
 import { ChatSessionSidebar } from './ChatSessionSidebar';
-import type { ChatMessage, DebugStep } from '@/types';
+import type { ChatMessage, DebugStep, LLMModel } from '@/types';
 
 function TypingDots() {
   return (
@@ -240,6 +242,170 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
+// ─── Model Selector ──────────────────────────────────────────────────────────
+
+function ModelSelector() {
+  const [open, setOpen] = useState(false);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const configQuery = useAgentModelConfig('doc-qa');
+  const providersQuery = useProviders();
+  const modelsQuery = useProviderModels(selectedProviderId);
+  const setConfigMutation = useSetAgentModelConfig();
+
+  const currentConfig = configQuery.data;
+  const providers = providersQuery.data?.items ?? [];
+  const models = modelsQuery.data?.items ?? [];
+
+  const currentProvider = providers.find((p) => p.id === currentConfig?.provider_id);
+
+  const handleSelect = async (model: LLMModel) => {
+    try {
+      await setConfigMutation.mutateAsync({
+        agentName: 'doc-qa',
+        provider_id: model.provider_id,
+        model_id: model.id,
+        temperature: 0.1,
+        max_tokens: model.max_tokens,
+      });
+      setOpen(false);
+    } catch {
+    }
+  };
+
+  const handleClose = () => {
+    setOpen(false);
+    setSelectedProviderId(null);
+  };
+
+  const currentLabel = configQuery.isLoading
+    ? '...'
+    : currentConfig
+      ? (currentConfig.model_name ?? currentConfig.model_slug ?? 'Configured')
+      : 'Default';
+
+  const providersLoading = providersQuery.isLoading;
+  const providersEmpty = !providersLoading && providers.length === 0;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        disabled={providersLoading && !currentConfig}
+        className="flex items-center gap-1 rounded-lg border border-border/20 px-2 py-1 text-[11px] font-medium text-muted-foreground/60 transition-all hover:border-border/40 hover:text-foreground active:scale-[0.97] disabled:opacity-40"
+      >
+        <Cpu className="h-3 w-3" />
+        <span>{currentLabel}</span>
+        <ChevronDown className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={handleClose} />
+          <div className="absolute right-0 top-full z-20 mt-1.5 w-64 origin-top-right animate-fade-up rounded-xl border border-border/30 bg-card p-1.5 shadow-lg">
+            {selectedProviderId ? (
+              /* ── Models view ── */
+              <>
+                <button
+                  onClick={() => setSelectedProviderId(null)}
+                  className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors w-full rounded-lg"
+                >
+                  <ChevronDown className="h-3 w-3 rotate-90" />
+                  Back to providers
+                </button>
+                <div className="mt-1 border-t border-border/20" />
+                <div className="max-h-64 overflow-y-auto pt-1">
+                  {modelsQuery.isLoading ? (
+                    <div className="space-y-2 px-2 py-3">
+                      <div className="h-3 w-24 shimmer rounded" />
+                      <div className="h-3 w-32 shimmer rounded" />
+                      <div className="h-3 w-20 shimmer rounded" />
+                    </div>
+                  ) : models.length === 0 ? (
+                    <p className="px-2 py-3 text-xs text-muted-foreground/50 text-center">No models for this provider</p>
+                  ) : (
+                    models.map((model) => {
+                      const isSelected = currentConfig?.model_id === model.id;
+                      return (
+                        <button
+                          key={model.id}
+                          onClick={() => handleSelect(model)}
+                          disabled={setConfigMutation.isPending}
+                          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-all ${
+                            isSelected
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-muted-foreground/70 hover:bg-accent hover:text-foreground'
+                          } disabled:opacity-50`}
+                        >
+                          <span className="flex-1">{model.name}</span>
+                          {model.slug && (
+                            <span className="text-[10px] text-muted-foreground/30 font-mono">{model.slug}</span>
+                          )}
+                          {isSelected && <Check className="h-3 w-3 shrink-0" />}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            ) : (
+              /* ── Providers view ── */
+              <>
+                <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/40">
+                  Providers
+                </div>
+                {providersLoading ? (
+                  <div className="space-y-2 px-2 py-3">
+                    <div className="h-3 w-24 shimmer rounded" />
+                    <div className="h-3 w-32 shimmer rounded" />
+                    <div className="h-3 w-20 shimmer rounded" />
+                  </div>
+                ) : providersEmpty ? (
+                  <div className="px-2 py-3 text-center">
+                    <p className="text-xs text-muted-foreground/50">No providers yet</p>
+                    <a href="/providers" className="mt-1 inline-block text-[11px] text-primary hover:underline">
+                      Add providers &rarr;
+                    </a>
+                  </div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto pt-1">
+                    {providers.map((provider) => {
+                      const isActiveProvider = currentConfig?.provider_id === provider.id;
+                      return (
+                        <button
+                          key={provider.id}
+                          onClick={() => setSelectedProviderId(provider.id)}
+                          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-all ${
+                            isActiveProvider
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-muted-foreground/70 hover:bg-accent hover:text-foreground'
+                          }`}
+                        >
+                          <div className="flex h-5 w-5 items-center justify-center rounded-md bg-primary/[0.06]">
+                            <Cpu className="h-3 w-3" />
+                          </div>
+                          <div className="flex-1">
+                            <span>{provider.name}</span>
+                            {isActiveProvider && (
+                              <span className="ml-2 text-[10px] text-primary/60">
+                                ({currentConfig?.model_name ?? currentConfig?.model_slug})
+                              </span>
+                            )}
+                          </div>
+                          <ChevronDown className="h-3 w-3 -rotate-90 text-muted-foreground/30 shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function ChatInterface() {
   const { messages, sendMessage, clearMessages, loadSession, isStreaming, sessionId } = useChat();
   const [input, setInput] = useState('');
@@ -354,6 +520,7 @@ export function ChatInterface() {
                 </p>
               )}
             </div>
+            <ModelSelector />
           </div>
           <div className="flex items-center gap-0.5">
             <Button

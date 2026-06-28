@@ -9,6 +9,7 @@ import {
   MessageSquare,
   FileBarChart,
   Bot,
+  Server,
   User as UserIcon,
   Shield,
   ChevronLeft,
@@ -25,6 +26,7 @@ const mainNavItems = [
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/reports', label: 'Reports', icon: FileBarChart },
   { href: '/agent', label: 'Agent', icon: Bot },
+  { href: '/providers', label: 'Providers', icon: Server },
 ];
 
 export function Sidebar() {

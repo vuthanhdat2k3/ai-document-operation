@@ -180,16 +180,19 @@ async def _call_llm(system_prompt: str, user_message: str, spec: AgentSpec) -> d
     """
     try:
         from app.llm.base import Message
-        from app.llm.factory import get_llm_provider
+        from app.llm.factory import get_llm_provider, get_llm_provider_from_db
 
-        provider = get_llm_provider()
+        try:
+            provider = await get_llm_provider_from_db(agent_name=spec.name)
+        except Exception:
+            provider = get_llm_provider()
         messages = [
             Message(role="system", content=system_prompt),
             Message(role="user", content=user_message),
         ]
         response = await provider.chat(
             messages=messages,
-            model=spec.model.model_name,
+            model=None,
             max_tokens=1024,
             temperature=0.0,
         )
